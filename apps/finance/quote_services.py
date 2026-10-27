@@ -128,6 +128,7 @@ def _send_quote_once(quote_id, actor):
             "address": quote.customer.address,
             "city": quote.customer.city,
             "country": quote.customer.country,
+            "ice": getattr(quote.customer, "ice", ""),
             "tax_identifier": quote.customer.tax_identifier,
         }
         changed = Quote.objects.filter(

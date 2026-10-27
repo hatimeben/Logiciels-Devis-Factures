@@ -62,6 +62,7 @@ def _customer_snapshot(customer):
         "address": customer.address,
         "city": customer.city,
         "country": customer.country,
+        "ice": getattr(customer, "ice", ""),
         "tax_identifier": customer.tax_identifier,
     }
 

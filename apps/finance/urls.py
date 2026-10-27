@@ -1,6 +1,13 @@
 from django.urls import path
 
-from . import company_views, dashboard_views, expense_views, invoice_views, quote_views
+from . import (
+    accounting_views,
+    company_views,
+    dashboard_views,
+    expense_views,
+    invoice_views,
+    quote_views,
+)
 
 
 urlpatterns = [
@@ -46,4 +53,11 @@ urlpatterns = [
     path("depenses/<int:expense_id>/modifier/", expense_views.expense_edit, name="expense-edit"),
     path("depenses/<int:expense_id>/paiement/", expense_views.expense_payment, name="expense-payment"),
     path("depenses/<int:expense_id>/justificatif/", expense_views.expense_receipt, name="expense-receipt"),
+
+    # Comptabilité & Export Fiduciaire (TVA marocaine)
+    path("comptabilite/", accounting_views.accounting_dashboard, name="accounting-dashboard"),
+    path("comptabilite/export/pack/", accounting_views.export_fiduciary_pack_xlsx, name="accounting-export-pack"),
+    path("comptabilite/export/tva/csv/", accounting_views.export_vat_csv, name="accounting-export-vat-csv"),
+    path("comptabilite/export/ventes/csv/", accounting_views.export_sales_csv, name="accounting-export-sales-csv"),
+    path("comptabilite/export/reglements/csv/", accounting_views.export_payments_csv, name="accounting-export-payments-csv"),
 ]

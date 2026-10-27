@@ -20,14 +20,20 @@
             {% if perms.finance.view_invoice %}<a class="nav-link {% if request.resolver_match.url_name == 'invoice-list' or request.resolver_match.url_name == 'invoice-create' or request.resolver_match.url_name == 'invoice-detail' or request.resolver_match.url_name == 'invoice-edit' or request.resolver_match.url_name == 'invoice-payment' %}active{% endif %}" href="{% url 'invoice-list' %}"><span aria-hidden="true">▧</span> Factures</a>{% endif %}
             {% if perms.finance.view_payment %}<a class="nav-link {% if request.resolver_match.url_name == 'payment-list' %}active{% endif %}" href="{% url 'payment-list' %}"><span aria-hidden="true">💳</span> Règlements</a>{% endif %}
             {% if perms.finance.view_expense %}<a class="nav-link {% if request.resolver_match.url_name == 'expense-list' or request.resolver_match.url_name == 'expense-create' or request.resolver_match.url_name == 'expense-detail' or request.resolver_match.url_name == 'expense-edit' or request.resolver_match.url_name == 'expense-payment' %}active{% endif %}" href="{% url 'expense-list' %}"><span aria-hidden="true">💸</span> Dépenses</a>{% endif %}
-            <a class="nav-link {% if request.resolver_match.url_name == 'company-settings' %}active{% endif %}" href="{% url 'company-settings' %}"><span aria-hidden="true">🏢</span> Entreprise</a>
-            <a class="nav-link" href="/admin/"><span aria-hidden="true">⚙</span> Administration</a>
+            {% if perms.finance.view_invoice %}<a class="nav-link {% if 'comptabilite' in request.path %}active{% endif %}" href="{% url 'accounting-dashboard' %}"><span aria-hidden="true">💼</span> Comptabilité</a>{% endif %}
+            {% if perms.finance.change_companysettings %}<a class="nav-link {% if request.resolver_match.url_name == 'company-settings' %}active{% endif %}" href="{% url 'company-settings' %}"><span aria-hidden="true">🏢</span> Entreprise</a>{% endif %}
+            {% if user.is_superuser %}<a class="nav-link" href="/admin/"><span aria-hidden="true">⚙</span> Administration</a>{% endif %}
         </nav>
-        <a class="user-chip" href="/admin/" title="Administration">
-            <span class="user-avatar" aria-hidden="true">{{ request.user.get_username|slice:":1"|upper }}</span>
-            <span class="user-name">{{ request.user.get_username }}</span>
-            <span class="user-caret" aria-hidden="true">⌄</span>
-        </a>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <a class="user-chip" href="{% if user.is_superuser %}/admin/{% else %}#{% endif %}" title="{{ request.user.get_username }}">
+                <span class="user-avatar" aria-hidden="true">{{ request.user.get_username|slice:":1"|upper }}</span>
+                <span class="user-name">{{ request.user.get_username }}</span>
+            </a>
+            <form method="post" action="{% url 'logout' %}" style="margin: 0;">
+                {% csrf_token %}
+                <button type="submit" class="button quiet" style="padding: 6px 10px; font-size: 0.8rem; background: transparent; border: 1px solid var(--line); border-radius: 999px; cursor: pointer;" title="Se déconnecter">🚪</button>
+            </form>
+        </div>
     </header>
     <main class="page">
         {% if messages %}

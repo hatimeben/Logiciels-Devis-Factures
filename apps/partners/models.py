@@ -1,3 +1,6 @@
+import re
+
+from django.core.exceptions import ValidationError
 from django.db import models
 
 
@@ -8,7 +11,8 @@ class Contact(models.Model):
     address = models.TextField("adresse", blank=True)
     city = models.CharField("ville", max_length=100, blank=True)
     country = models.CharField("pays", max_length=100, default="Maroc")
-    tax_identifier = models.CharField("identifiant fiscal", max_length=100, blank=True)
+    ice = models.CharField("ICE (15 chiffres)", max_length=20, blank=True)
+    tax_identifier = models.CharField("identifiant fiscal (IF)", max_length=100, blank=True)
     notes = models.TextField("notes", blank=True)
     is_active = models.BooleanField("actif", default=True)
     created_at = models.DateTimeField("créé le", auto_now_add=True)
@@ -17,6 +21,14 @@ class Contact(models.Model):
     class Meta:
         abstract = True
         ordering = ["name"]
+
+    def clean(self):
+        super().clean()
+        if self.ice:
+            cleaned = re.sub(r"\s+", "", self.ice)
+            if not (cleaned.isdigit() and len(cleaned) == 15):
+                raise ValidationError({"ice": "L'ICE marocain doit comporter exactement 15 chiffres."})
+            self.ice = cleaned
 
     def __str__(self):
         return self.name
