@@ -13,7 +13,7 @@
         </p>
     </div>
     <div class="header-actions">
-        <a class="button primary" style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border: 1px solid #c59b27; color: #fff; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);"
+        <a id="topExportPackLink" class="button primary" style="background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); border: 1px solid #c59b27; color: #fff; box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);"
            href="{% url 'accounting-export-pack' %}?year={{ year }}&period_type={{ period_type }}&period_value={{ period_value }}&regime={{ regime }}">
             <span aria-hidden="true" style="color: #c59b27;">📥</span> Télécharger le Pack Fiduciaire (.xlsx)
         </a>
@@ -21,9 +21,9 @@
 </div>
 
 <!-- Filtres de Période & Régime de TVA -->
-<section class="panel filter-panel" style="margin-bottom: 24px; padding: 18px 20px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;">
-    <form method="get" action="{% url 'accounting-dashboard' %}" style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end;">
-        <input type="hidden" name="tab" value="{{ active_tab }}">
+<section class="panel filter-panel" style="margin-bottom: 24px; padding: 18px 20px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);">
+    <form id="accountingFilterForm" method="get" action="{% url 'accounting-dashboard' %}" style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end;">
+        <input type="hidden" name="tab" id="id_active_tab" value="{{ active_tab }}">
 
         <div style="display: flex; flex-direction: column; gap: 6px;">
             <label for="id_year" style="font-size: 0.82rem; font-weight: 600; color: #475569;">Année fiscale</label>
@@ -45,7 +45,7 @@
 
         <div id="wrapper_quarter" style="display: {% if period_type == 'quarter' %}flex{% else %}none{% endif %}; flex-direction: column; gap: 6px;">
             <label for="id_quarter" style="font-size: 0.82rem; font-weight: 600; color: #475569;">Trimestre</label>
-            <select name="period_value" id="id_quarter" style="padding: 8px 12px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: 500;">
+            <select name="period_value" id="id_quarter" {% if period_type != 'quarter' %}disabled{% endif %} style="padding: 8px 12px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: 500;">
                 {% for q_val, q_label in quarters_list %}
                     <option value="{{ q_val }}" {% if q_val == period_value and period_type == "quarter" %}selected{% endif %}>{{ q_label }}</option>
                 {% endfor %}
@@ -54,7 +54,7 @@
 
         <div id="wrapper_month" style="display: {% if period_type == 'month' %}flex{% else %}none{% endif %}; flex-direction: column; gap: 6px;">
             <label for="id_month" style="font-size: 0.82rem; font-weight: 600; color: #475569;">Mois</label>
-            <select name="period_value" id="id_month" style="padding: 8px 12px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: 500;">
+            <select name="period_value" id="id_month" {% if period_type != 'month' %}disabled{% endif %} style="padding: 8px 12px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: 500;">
                 {% for m_val, m_label in months_list %}
                     <option value="{{ m_val }}" {% if m_val == period_value and period_type == "month" %}selected{% endif %}>{{ m_label }}</option>
                 {% endfor %}
@@ -69,383 +69,206 @@
             </select>
         </div>
 
-        <button type="submit" class="button secondary" style="padding: 9px 18px; font-weight: 600;">
-            Actualiser
+        <button type="submit" id="btnRefreshAccounting" class="button secondary" style="padding: 9px 18px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; cursor: pointer;">
+            <span id="refreshSpinner" style="display: none;" aria-hidden="true">⏳</span>
+            <span id="refreshBtnText">Actualiser</span>
         </button>
     </form>
 </section>
 
-<!-- Synthèse Fiscale & KPIs -->
-<section class="summary-grid" style="margin-bottom: 24px;">
-    <article class="panel summary-card" style="border-top: 4px solid #0f172a;">
-        <span>Base HT Imposable</span>
-        <strong style="color: #0f172a;">{{ vat_data.totals.base_ht|money }} MAD</strong>
-        <small>Période : {{ period_label }}</small>
-    </article>
-
-    <article class="panel summary-card" style="border-top: 4px solid #c59b27; background: #fffcf5;">
-        <span style="color: #9a7516; font-weight: 700;">TVA Collectée Exigible (DGI)</span>
-        <strong style="color: #c59b27; font-size: 1.45rem;">{{ vat_data.totals.tax_amount|money }} MAD</strong>
-        <small style="color: #9a7516;">Régime : {{ vat_data.regime|title }}</small>
-    </article>
-
-    <article class="panel summary-card" style="border-top: 4px solid #10b981;">
-        <span>Total TTC des Opérations</span>
-        <strong style="color: #10b981;">{{ vat_data.totals.total_ttc|money }} MAD</strong>
-        <small>{{ vat_data.totals.count }} ligne(s) d'opération</small>
-    </article>
-
-    <article class="panel summary-card" style="border-top: 4px solid #64748b;">
-        <span>Journal des Ventes</span>
-        <strong>{{ sales_data.totals.total|money }} MAD</strong>
-        <small>{{ sales_data.totals.count }} facture(s) émise(s)</small>
-    </article>
-</section>
-
-<!-- Tableau de Synthèse de la TVA par Taux -->
-{% if vat_data.summary %}
-<section class="panel table-panel" style="margin-bottom: 24px; padding: 20px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-        <h2 style="font-size: 1.05rem; font-weight: 700; color: #0f172a; margin: 0;">
-            Ventilation de la TVA par Taux légal marocain
-        </h2>
-        <span style="font-size: 0.8rem; font-weight: 600; padding: 4px 10px; border-radius: 20px; background: #fef9c3; color: #854d0e;">
-            Conforme bordereau DGI
-        </span>
-    </div>
-    <div class="table-scroll">
-        <table class="data-table">
-            <thead>
-                <tr style="background: #0f172a; color: #ffffff;">
-                    <th>Taux légal</th>
-                    <th>Désignation de la Taxe</th>
-                    <th class="numeric">Base HT Imposable</th>
-                    <th class="numeric">TVA Collectée</th>
-                    <th class="numeric">Total TTC</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for item in vat_data.summary %}
-                    <tr>
-                        <td><strong>{{ item.rate }} %</strong></td>
-                        <td>{{ item.name }}</td>
-                        <td class="numeric">{{ item.base_ht|money }} MAD</td>
-                        <td class="numeric" style="color: #c59b27; font-weight: 700;">{{ item.tax_amount|money }} MAD</td>
-                        <td class="numeric">{{ item.total_ttc|money }} MAD</td>
-                    </tr>
-                {% endfor %}
-                <tr style="background: #faf5e8; font-weight: 700; border-top: 2px solid #c59b27;">
-                    <td colspan="2">TOTAL TVA DÉCLARÉE</td>
-                    <td class="numeric">{{ vat_data.totals.base_ht|money }} MAD</td>
-                    <td class="numeric" style="color: #c59b27; font-size: 1.05rem;">{{ vat_data.totals.tax_amount|money }} MAD</td>
-                    <td class="numeric">{{ vat_data.totals.total_ttc|money }} MAD</td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
-</section>
-{% endif %}
-
-<!-- Navigation par Onglets -->
-<div style="display: flex; gap: 8px; border-bottom: 2px solid #e2e8f0; margin-bottom: 20px;">
-    <a href="?year={{ year }}&period_type={{ period_type }}&period_value={{ period_value }}&regime={{ regime }}&tab=tva"
-       style="padding: 10px 18px; font-weight: 600; font-size: 0.95rem; text-decoration: none; border-bottom: 3px solid {% if active_tab == 'tva' %}#0f172a{% else %}transparent{% endif %}; color: {% if active_tab == 'tva' %}#0f172a{% else %}#64748b{% endif %};">
-        🧾 1. Déclaration TVA & Encaissements (DGI)
-    </a>
-    <a href="?year={{ year }}&period_type={{ period_type }}&period_value={{ period_value }}&regime={{ regime }}&tab=ventes"
-       style="padding: 10px 18px; font-weight: 600; font-size: 0.95rem; text-decoration: none; border-bottom: 3px solid {% if active_tab == 'ventes' %}#0f172a{% else %}transparent{% endif %}; color: {% if active_tab == 'ventes' %}#0f172a{% else %}#64748b{% endif %};">
-        📖 2. Journal des Ventes (VE)
-    </a>
-    <a href="?year={{ year }}&period_type={{ period_type }}&period_value={{ period_value }}&regime={{ regime }}&tab=reglements"
-       style="padding: 10px 18px; font-weight: 600; font-size: 0.95rem; text-decoration: none; border-bottom: 3px solid {% if active_tab == 'reglements' %}#0f172a{% else %}transparent{% endif %}; color: {% if active_tab == 'reglements' %}#0f172a{% else %}#64748b{% endif %};">
-        💳 3. Journal des Règlements (TR)
-    </a>
+<!-- Notification AJAX en cas d'erreur réseau -->
+<div id="accountingErrorAlert" style="display: none; margin-bottom: 20px; padding: 12px 16px; border-radius: 8px; background: #fee2e2; border: 1px solid #f87171; color: #991b1b; font-size: 0.9rem;">
+    ⚠️ Une erreur est survenue lors de l'actualisation des données. Veuillez réessayer ou actualiser la page.
 </div>
 
-<!-- ============================================== -->
-<!-- CONTENU DE L'ONGLET 1 : DÉCLARATION TVA (DGI)  -->
-<!-- ============================================== -->
-{% if active_tab == "tva" %}
-<section class="panel table-panel">
-    <div class="section-heading" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-        <div>
-            <p class="eyebrow">RELEVÉ DE TVA COLLECTÉE</p>
-            <h2>Bordereau détaillé des opérations imposables</h2>
-        </div>
-        <div style="display: flex; gap: 8px;">
-            <a class="button secondary" href="{% url 'accounting-export-vat-csv' %}?year={{ year }}&period_type={{ period_type }}&period_value={{ period_value }}&regime={{ regime }}">
-                Export CSV (Excel)
-            </a>
-            <a class="button primary" style="background: #0f172a; border-color: #0f172a;" href="{% url 'accounting-export-pack' %}?year={{ year }}&period_type={{ period_type }}&period_value={{ period_value }}&regime={{ regime }}">
-                Pack Complet (.xlsx)
-            </a>
-        </div>
-    </div>
-
-    {% if vat_data.rows %}
-        <div class="table-scroll">
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>N°</th>
-                        <th>Facture</th>
-                        <th>Date Facture</th>
-                        <th>Client / Raison Sociale</th>
-                        <th>ICE Client</th>
-                        <th>Date Règlement</th>
-                        <th>Mode</th>
-                        <th class="numeric">Base HT</th>
-                        <th>Taux</th>
-                        <th class="numeric">TVA Collectée</th>
-                        <th class="numeric">Total TTC</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for r in vat_data.rows %}
-                        <tr>
-                            <td>{{ r.order_num }}</td>
-                            <td><strong>{{ r.invoice_number }}</strong></td>
-                            <td>{{ r.invoice_date|date:"d/m/Y" }}</td>
-                            <td>{{ r.customer_name }}</td>
-                            <td><code>{{ r.customer_ice }}</code></td>
-                            <td>{{ r.payment_date|date:"d/m/Y" }}</td>
-                            <td><span style="font-size: 0.8rem; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">{{ r.payment_method }}</span></td>
-                            <td class="numeric">{{ r.base_ht|money }} MAD</td>
-                            <td><span style="color: #0f172a; font-weight: 600;">{{ r.tax_rate }} %</span></td>
-                            <td class="numeric" style="color: #c59b27; font-weight: 700;">{{ r.tax_amount|money }} MAD</td>
-                            <td class="numeric">{{ r.total_ttc|money }} MAD</td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    {% else %}
-        <p class="empty-inline">Aucune opération taxable enregistrée sur cette période selon le régime {{ vat_data.regime }}.</p>
-    {% endif %}
-</section>
-{% endif %}
-
-<!-- ============================================== -->
-<!-- CONTENU DE L'ONGLET 2 : JOURNAL DES VENTES     -->
-<!-- ============================================== -->
-{% if active_tab == "ventes" %}
-<section class="panel table-panel">
-    <div class="section-heading" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-        <div>
-            <p class="eyebrow">GRAND LIVRE AUXILIAIRE</p>
-            <h2>Journal des Ventes de la période</h2>
-        </div>
-        <div style="display: flex; gap: 8px;">
-            <a class="button secondary" href="{% url 'accounting-export-sales-csv' %}?year={{ year }}&period_type={{ period_type }}&period_value={{ period_value }}&regime={{ regime }}">
-                Export CSV (Excel)
-            </a>
-            <a class="button primary" style="background: #0f172a; border-color: #0f172a;" href="{% url 'accounting-export-pack' %}?year={{ year }}&period_type={{ period_type }}&period_value={{ period_value }}&regime={{ regime }}">
-                Pack Complet (.xlsx)
-            </a>
-        </div>
-    </div>
-
-    {% if sales_data.entries %}
-        <div class="table-scroll">
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>Date Pièce</th>
-                        <th>N° Facture</th>
-                        <th>Client</th>
-                        <th>ICE Client</th>
-                        <th class="numeric">Brut HT</th>
-                        <th class="numeric">Remises</th>
-                        <th class="numeric">Net HT</th>
-                        <th class="numeric">TVA</th>
-                        <th class="numeric">Total TTC</th>
-                        <th>Statut</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for e in sales_data.entries %}
-                        <tr>
-                            <td>{{ e.date|date:"d/m/Y" }}</td>
-                            <td><strong>{{ e.number }}</strong></td>
-                            <td>{{ e.customer_name }}</td>
-                            <td><code>{{ e.customer_ice }}</code></td>
-                            <td class="numeric">{{ e.gross|money }} MAD</td>
-                            <td class="numeric">{{ e.discount|money }} MAD</td>
-                            <td class="numeric">{{ e.net|money }} MAD</td>
-                            <td class="numeric">{{ e.tax|money }} MAD</td>
-                            <td class="numeric"><strong>{{ e.total|money }} MAD</strong></td>
-                            <td><span class="status status-issued">{{ e.status_display }}</span></td>
-                        </tr>
-                    {% endfor %}
-                    <tr style="background: #faf5e8; font-weight: 700; border-top: 2px solid #0f172a;">
-                        <td colspan="4">TOTAUX DU JOURNAL</td>
-                        <td class="numeric">{{ sales_data.totals.gross|money }} MAD</td>
-                        <td class="numeric">{{ sales_data.totals.discount|money }} MAD</td>
-                        <td class="numeric">{{ sales_data.totals.net|money }} MAD</td>
-                        <td class="numeric">{{ sales_data.totals.tax|money }} MAD</td>
-                        <td class="numeric">{{ sales_data.totals.total|money }} MAD</td>
-                        <td></td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-
-        <div style="margin-top: 32px;">
-            <h3 style="font-size: 1rem; font-weight: 700; color: #0f172a; margin-bottom: 12px;">
-                Écritures comptables en partie double (Plan Comptable Général Marocain)
-            </h3>
-            <div class="table-scroll">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Journal</th>
-                            <th>N° Pièce</th>
-                            <th>Compte</th>
-                            <th>Intitulé du compte</th>
-                            <th>Libellé</th>
-                            <th class="numeric">Débit (MAD)</th>
-                            <th class="numeric">Crédit (MAD)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for a in sales_data.accounting_entries %}
-                            <tr>
-                                <td>{{ a.date|date:"d/m/Y" }}</td>
-                                <td><span style="font-weight: 600;">VE</span></td>
-                                <td>{{ a.piece }}</td>
-                                <td><code>{{ a.account }}</code></td>
-                                <td>{{ a.account_label }}</td>
-                                <td>{{ a.libelle }}</td>
-                                <td class="numeric">{% if a.debit > 0 %}<strong>{{ a.debit|money }}</strong>{% else %}—{% endif %}</td>
-                                <td class="numeric">{% if a.credit > 0 %}<strong>{{ a.credit|money }}</strong>{% else %}—{% endif %}</td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    {% else %}
-        <p class="empty-inline">Aucune facture émise sur cette période.</p>
-    {% endif %}
-</section>
-{% endif %}
-
-<!-- ============================================== -->
-<!-- CONTENU DE L'ONGLET 3 : JOURNAL DES RÈGLEMENTS -->
-<!-- ============================================== -->
-{% if active_tab == "reglements" %}
-<section class="panel table-panel">
-    <div class="section-heading" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-        <div>
-            <p class="eyebrow">TRÉSORERIE & ENCAISSEMENTS</p>
-            <h2>Journal des Règlements reçus</h2>
-        </div>
-        <div style="display: flex; gap: 8px;">
-            <a class="button secondary" href="{% url 'accounting-export-payments-csv' %}?year={{ year }}&period_type={{ period_type }}&period_value={{ period_value }}&regime={{ regime }}">
-                Export CSV (Excel)
-            </a>
-            <a class="button primary" style="background: #0f172a; border-color: #0f172a;" href="{% url 'accounting-export-pack' %}?year={{ year }}&period_type={{ period_type }}&period_value={{ period_value }}&regime={{ regime }}">
-                Pack Complet (.xlsx)
-            </a>
-        </div>
-    </div>
-
-    {% if payments_data.entries %}
-        <div class="table-scroll">
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>Date Règlement</th>
-                        <th>N° Reçu</th>
-                        <th>Mode</th>
-                        <th>Référence</th>
-                        <th>Facture Imputée</th>
-                        <th>Client</th>
-                        <th class="numeric">Montant Encaissé</th>
-                        <th>Remarques</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for p in payments_data.entries %}
-                        <tr>
-                            <td>{{ p.date|date:"d/m/Y" }}</td>
-                            <td><strong>REG-{{ p.payment_id }}</strong></td>
-                            <td><span style="font-size: 0.8rem; background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 4px; font-weight: 600;">{{ p.method_display }}</span></td>
-                            <td>{{ p.reference }}</td>
-                            <td><a href="{% url 'invoice-list' %}"><strong>{{ p.invoice_number }}</strong></a></td>
-                            <td>{{ p.customer_name }}</td>
-                            <td class="numeric"><strong style="color: #0f172a;">{{ p.amount|money }} MAD</strong></td>
-                            <td><small>{{ p.notes|default:"—" }}</small></td>
-                        </tr>
-                    {% endfor %}
-                    <tr style="background: #faf5e8; font-weight: 700; border-top: 2px solid #0f172a;">
-                        <td colspan="6">TOTAL DES RÈGLEMENTS ENCAISSÉS</td>
-                        <td class="numeric" style="color: #0f172a; font-size: 1.05rem;">{{ payments_data.totals.amount|money }} MAD</td>
-                        <td></td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-
-        <div style="margin-top: 32px;">
-            <h3 style="font-size: 1rem; font-weight: 700; color: #0f172a; margin-bottom: 12px;">
-                Écritures comptables de trésorerie (Compte 5141 Banque / 5161 Caisse)
-            </h3>
-            <div class="table-scroll">
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Journal</th>
-                            <th>N° Pièce</th>
-                            <th>Compte</th>
-                            <th>Intitulé du compte</th>
-                            <th>Libellé</th>
-                            <th class="numeric">Débit (MAD)</th>
-                            <th class="numeric">Crédit (MAD)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for a in payments_data.accounting_entries %}
-                            <tr>
-                                <td>{{ a.date|date:"d/m/Y" }}</td>
-                                <td><span style="font-weight: 600;">TR</span></td>
-                                <td>{{ a.piece }}</td>
-                                <td><code>{{ a.account }}</code></td>
-                                <td>{{ a.account_label }}</td>
-                                <td>{{ a.libelle }}</td>
-                                <td class="numeric">{% if a.debit > 0 %}<strong>{{ a.debit|money }}</strong>{% else %}—{% endif %}</td>
-                                <td class="numeric">{% if a.credit > 0 %}<strong>{{ a.credit|money }}</strong>{% else %}—{% endif %}</td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    {% else %}
-        <p class="empty-inline">Aucun règlement client enregistré sur cette période.</p>
-    {% endif %}
-</section>
-{% endif %}
+<!-- Zone de Contenu Dynamique (Restitution AJAX & DOM) -->
+<div id="accounting-dynamic-content" style="position: relative; min-height: 200px; transition: opacity 0.2s ease;">
+    {% include "finance/accounting/partials/dashboard_content.html" %}
+</div>
 
 <script>
+// ==============================================================================
+// GESTIONNAIRE JAVASCRIPT DU FORMULAIRE ET DE L'ACTUALISATION DYNAMIQUE (AJAX)
+// ==============================================================================
+
+/**
+ * Synchronise l'affichage et l'état 'disabled' des sélecteurs Trimestre et Mois.
+ * Règle W3C : Un input avec l'attribut 'disabled' n'est JAMAIS envoyé lors du submit.
+ * Cela résout définitivement le conflit de soumission de double 'period_value'.
+ */
 function togglePeriodValueSelect() {
-    var pType = document.getElementById("id_period_type").value;
+    var pTypeSelect = document.getElementById("id_period_type");
+    if (!pTypeSelect) return;
+
+    var pType = pTypeSelect.value;
     var wQuarter = document.getElementById("wrapper_quarter");
     var wMonth = document.getElementById("wrapper_month");
+    var sQuarter = document.getElementById("id_quarter");
+    var sMonth = document.getElementById("id_month");
 
     if (pType === "quarter") {
-        wQuarter.style.display = "flex";
-        wMonth.style.display = "none";
+        if (wQuarter) wQuarter.style.display = "flex";
+        if (wMonth) wMonth.style.display = "none";
+        if (sQuarter) sQuarter.disabled = false;
+        if (sMonth) sMonth.disabled = true;
     } else if (pType === "month") {
-        wQuarter.style.display = "none";
-        wMonth.style.display = "flex";
-    } else {
-        wQuarter.style.display = "none";
-        wMonth.style.display = "none";
+        if (wQuarter) wQuarter.style.display = "none";
+        if (wMonth) wMonth.style.display = "flex";
+        if (sQuarter) sQuarter.disabled = true;
+        if (sMonth) sMonth.disabled = false;
+    } else { // Annuelle complète
+        if (wQuarter) wQuarter.style.display = "none";
+        if (wMonth) wMonth.style.display = "none";
+        if (sQuarter) sQuarter.disabled = true;
+        if (sMonth) sMonth.disabled = true;
     }
 }
+
+/**
+ * Construit l'URL avec les paramètres actifs du formulaire
+ */
+function buildAccountingFilterQuery(targetTab) {
+    var form = document.getElementById("accountingFilterForm");
+    if (!form) return "";
+
+    // S'assurer de la bonne synchronisation de disabled
+    togglePeriodValueSelect();
+
+    var params = new URLSearchParams();
+
+    var year = document.getElementById("id_year").value;
+    var pType = document.getElementById("id_period_type").value;
+    var regime = document.getElementById("id_regime").value;
+    var tab = targetTab || document.getElementById("id_active_tab").value || "tva";
+
+    params.set("year", year);
+    params.set("period_type", pType);
+
+    if (pType === "quarter") {
+        var sQuarter = document.getElementById("id_quarter");
+        if (sQuarter) params.set("period_value", sQuarter.value);
+    } else if (pType === "month") {
+        var sMonth = document.getElementById("id_month");
+        if (sMonth) params.set("period_value", sMonth.value);
+    }
+
+    params.set("regime", regime);
+    params.set("tab", tab);
+
+    return params.toString();
+}
+
+/**
+ * Met à jour les liens de téléchargement d'exports pour correspondre aux filtres sélectionnés
+ */
+function updateExportLinks(queryString) {
+    var topPackLink = document.getElementById("topExportPackLink");
+    if (topPackLink) {
+        var baseUrl = topPackLink.getAttribute("href").split("?")[0];
+        topPackLink.setAttribute("href", baseUrl + "?" + queryString);
+    }
+}
+
+/**
+ * Effectue la requête AJAX pour rafraîchir le contenu sans recharger la page
+ */
+function fetchAccountingData(queryString) {
+    var btn = document.getElementById("btnRefreshAccounting");
+    var spinner = document.getElementById("refreshSpinner");
+    var btnText = document.getElementById("refreshBtnText");
+    var container = document.getElementById("accounting-dynamic-content");
+    var errorAlert = document.getElementById("accountingErrorAlert");
+
+    if (errorAlert) errorAlert.style.display = "none";
+
+    // État visuel de chargement
+    if (btn) btn.disabled = true;
+    if (spinner) spinner.style.display = "inline";
+    if (btnText) btnText.textContent = "Actualisation...";
+    if (container) container.style.opacity = "0.45";
+
+    var form = document.getElementById("accountingFilterForm");
+    var actionUrl = form ? form.getAttribute("action") : window.location.pathname;
+    var fullUrl = actionUrl + "?" + queryString;
+
+    fetch(fullUrl, {
+        method: "GET",
+        headers: {
+            "X-Requested-With": "XMLHttpRequest",
+            "Accept": "text/html, application/xhtml+xml",
+        }
+    })
+    .then(function(response) {
+        if (!response.ok) {
+            throw new Error("Erreur réseau: " + response.status);
+        }
+        return response.text();
+    })
+    .then(function(html) {
+        if (container) {
+            container.innerHTML = html;
+            container.style.opacity = "1";
+        }
+
+        // Mettre à jour l'URL du navigateur (pushState)
+        if (window.history && window.history.pushState) {
+            window.history.pushState({ path: fullUrl }, "", fullUrl);
+        }
+
+        // Mettre à jour les liens d'export
+        updateExportLinks(queryString);
+    })
+    .catch(function(err) {
+        console.error("Échec du rafraîchissement comptable :", err);
+        if (container) container.style.opacity = "1";
+        if (errorAlert) {
+            errorAlert.textContent = "⚠️ Impossible d'actualiser les données : " + (err.message || "Erreur de connexion.");
+            errorAlert.style.display = "block";
+        }
+    })
+    .finally(function() {
+        if (btn) btn.disabled = false;
+        if (spinner) spinner.style.display = "none";
+        if (btnText) btnText.textContent = "Actualiser";
+    });
+}
+
+// Initialisation au chargement du DOM
+document.addEventListener("DOMContentLoaded", function() {
+    togglePeriodValueSelect();
+
+    var form = document.getElementById("accountingFilterForm");
+    if (form) {
+        // Interception du submit du formulaire (bouton "Actualiser" ou touche Entrée)
+        form.addEventListener("submit", function(e) {
+            e.preventDefault();
+            var qs = buildAccountingFilterQuery();
+            fetchAccountingData(qs);
+        });
+    }
+
+    // Gestion du clic sur les onglets dynamiques sans rechargement
+    var container = document.getElementById("accounting-dynamic-content");
+    if (container) {
+        container.addEventListener("click", function(e) {
+            var tabLink = e.target.closest(".accounting-tab-link");
+            if (tabLink) {
+                e.preventDefault();
+                var tab = tabLink.getAttribute("data-tab");
+                if (tab) {
+                    var tabInput = document.getElementById("id_active_tab");
+                    if (tabInput) tabInput.value = tab;
+                    var qs = buildAccountingFilterQuery(tab);
+                    fetchAccountingData(qs);
+                }
+            }
+        });
+    }
+
+    // Gestion du bouton précédent / suivant du navigateur
+    window.addEventListener("popstate", function() {
+        window.location.reload();
+    });
+});
 </script>
 {% endblock %}
-

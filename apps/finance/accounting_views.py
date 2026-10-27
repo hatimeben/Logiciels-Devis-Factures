@@ -29,10 +29,20 @@ def _get_filter_params(request):
     if period_type not in {"month", "quarter", "year"}:
         period_type = "quarter"
 
-    default_period_value = ((today.month - 1) // 3 + 1) if period_type == "quarter" else today.month
-    period_value = request.GET.get("period_value", default_period_value)
+    # Récupération sécurisée de la valeur de période
+    # Priorité aux valeurs spécifiques puis repli sur le paramètre standard period_value
+    if period_type == "quarter":
+        default_period_value = (today.month - 1) // 3 + 1
+        raw_val = request.GET.get("period_value_quarter") or request.GET.get("period_value")
+    elif period_type == "month":
+        default_period_value = today.month
+        raw_val = request.GET.get("period_value_month") or request.GET.get("period_value")
+    else:  # year
+        default_period_value = 1
+        raw_val = 1
+
     try:
-        period_value = int(period_value)
+        period_value = int(raw_val) if raw_val is not None else default_period_value
     except (TypeError, ValueError):
         period_value = default_period_value
 
@@ -90,6 +100,15 @@ def accounting_dashboard(request):
         "sales_data": sales_data,
         "payments_data": payments_data,
     }
+
+    # Détection AJAX pour rafraîchissement dynamique sans rechargement brutal de page
+    is_ajax = (
+        request.headers.get("x-requested-with") == "XMLHttpRequest"
+        or request.GET.get("ajax") == "1"
+    )
+    if is_ajax:
+        return render(request, "finance/accounting/partials/dashboard_content.html", context)
+
     return render(request, "finance/accounting/dashboard.html", context)
 
 

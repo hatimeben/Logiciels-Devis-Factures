@@ -1284,3 +1284,11 @@ class DocumentHistory(models.Model):
     def __str__(self):
         document = self.quote or self.invoice
         return f"{self.get_event_display()} - {document}"
+
+
+from .accounting_models import (
+    CompteComptable,
+    JournalComptable,
+    EcritureComptable,
+    LigneEcriture,
+)

@@ -1,0 +1,362 @@
+{% load finance_quotes %}
+
+<!-- Synthèse Fiscale & KPIs -->
+<section class="summary-grid" style="margin-bottom: 24px;">
+    <article class="panel summary-card" style="border-top: 4px solid #0f172a;">
+        <span>Base HT Imposable</span>
+        <strong style="color: #0f172a;">{{ vat_data.totals.base_ht|money }} MAD</strong>
+        <small>Période : {{ period_label }}</small>
+    </article>
+
+    <article class="panel summary-card" style="border-top: 4px solid #c59b27; background: #fffcf5;">
+        <span style="color: #9a7516; font-weight: 700;">TVA Collectée Exigible (DGI)</span>
+        <strong style="color: #c59b27; font-size: 1.45rem;">{{ vat_data.totals.tax_amount|money }} MAD</strong>
+        <small style="color: #9a7516;">Régime : {{ vat_data.regime|title }}</small>
+    </article>
+
+    <article class="panel summary-card" style="border-top: 4px solid #10b981;">
+        <span>Total TTC des Opérations</span>
+        <strong style="color: #10b981;">{{ vat_data.totals.total_ttc|money }} MAD</strong>
+        <small>{{ vat_data.totals.count }} ligne(s) d'opération</small>
+    </article>
+
+    <article class="panel summary-card" style="border-top: 4px solid #64748b;">
+        <span>Journal des Ventes</span>
+        <strong>{{ sales_data.totals.total|money }} MAD</strong>
+        <small>{{ sales_data.totals.count }} facture(s) émise(s)</small>
+    </article>
+</section>
+
+<!-- Tableau de Synthèse de la TVA par Taux -->
+{% if vat_data.summary %}
+<section class="panel table-panel" style="margin-bottom: 24px; padding: 20px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h2 style="font-size: 1.05rem; font-weight: 700; color: #0f172a; margin: 0;">
+            Ventilation de la TVA par Taux légal marocain
+        </h2>
+        <span style="font-size: 0.8rem; font-weight: 600; padding: 4px 10px; border-radius: 20px; background: #fef9c3; color: #854d0e;">
+            Conforme bordereau DGI
+        </span>
+    </div>
+    <div class="table-scroll">
+        <table class="data-table">
+            <thead>
+                <tr style="background: #0f172a; color: #ffffff;">
+                    <th>Taux légal</th>
+                    <th>Désignation de la Taxe</th>
+                    <th class="numeric">Base HT Imposable</th>
+                    <th class="numeric">TVA Collectée</th>
+                    <th class="numeric">Total TTC</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in vat_data.summary %}
+                    <tr>
+                        <td><strong>{{ item.rate }} %</strong></td>
+                        <td>{{ item.name }}</td>
+                        <td class="numeric">{{ item.base_ht|money }} MAD</td>
+                        <td class="numeric" style="color: #c59b27; font-weight: 700;">{{ item.tax_amount|money }} MAD</td>
+                        <td class="numeric">{{ item.total_ttc|money }} MAD</td>
+                    </tr>
+                {% endfor %}
+                <tr style="background: #faf5e8; font-weight: 700; border-top: 2px solid #c59b27;">
+                    <td colspan="2">TOTAL TVA DÉCLARÉE</td>
+                    <td class="numeric">{{ vat_data.totals.base_ht|money }} MAD</td>
+                    <td class="numeric" style="color: #c59b27; font-size: 1.05rem;">{{ vat_data.totals.tax_amount|money }} MAD</td>
+                    <td class="numeric">{{ vat_data.totals.total_ttc|money }} MAD</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endif %}
+
+<!-- Navigation par Onglets -->
+<div class="accounting-tabs" style="display: flex; gap: 8px; border-bottom: 2px solid #e2e8f0; margin-bottom: 20px;">
+    <a href="?year={{ year }}&period_type={{ period_type }}&period_value={{ period_value }}&regime={{ regime }}&tab=tva"
+       class="accounting-tab-link {% if active_tab == 'tva' %}active{% endif %}"
+       data-tab="tva"
+       style="padding: 10px 18px; font-weight: 600; font-size: 0.95rem; text-decoration: none; border-bottom: 3px solid {% if active_tab == 'tva' %}#0f172a{% else %}transparent{% endif %}; color: {% if active_tab == 'tva' %}#0f172a{% else %}#64748b{% endif %};">
+        🧾 1. Déclaration TVA & Encaissements (DGI)
+    </a>
+    <a href="?year={{ year }}&period_type={{ period_type }}&period_value={{ period_value }}&regime={{ regime }}&tab=ventes"
+       class="accounting-tab-link {% if active_tab == 'ventes' %}active{% endif %}"
+       data-tab="ventes"
+       style="padding: 10px 18px; font-weight: 600; font-size: 0.95rem; text-decoration: none; border-bottom: 3px solid {% if active_tab == 'ventes' %}#0f172a{% else %}transparent{% endif %}; color: {% if active_tab == 'ventes' %}#0f172a{% else %}#64748b{% endif %};">
+        📖 2. Journal des Ventes (VE)
+    </a>
+    <a href="?year={{ year }}&period_type={{ period_type }}&period_value={{ period_value }}&regime={{ regime }}&tab=reglements"
+       class="accounting-tab-link {% if active_tab == 'reglements' %}active{% endif %}"
+       data-tab="reglements"
+       style="padding: 10px 18px; font-weight: 600; font-size: 0.95rem; text-decoration: none; border-bottom: 3px solid {% if active_tab == 'reglements' %}#0f172a{% else %}transparent{% endif %}; color: {% if active_tab == 'reglements' %}#0f172a{% else %}#64748b{% endif %};">
+        💳 3. Journal des Règlements (TR)
+    </a>
+</div>
+
+<!-- ============================================== -->
+<!-- CONTENU DE L'ONGLET 1 : DÉCLARATION TVA (DGI)  -->
+<!-- ============================================== -->
+{% if active_tab == "tva" %}
+<section class="panel table-panel">
+    <div class="section-heading" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <div>
+            <p class="eyebrow">RELEVÉ DE TVA COLLECTÉE</p>
+            <h2>Bordereau détaillé des opérations imposables</h2>
+        </div>
+        <div style="display: flex; gap: 8px;">
+            <a class="button secondary export-link-vat" href="{% url 'accounting-export-vat-csv' %}?year={{ year }}&period_type={{ period_type }}&period_value={{ period_value }}&regime={{ regime }}">
+                Export CSV (Excel)
+            </a>
+            <a class="button primary export-link-pack" style="background: #0f172a; border-color: #0f172a;" href="{% url 'accounting-export-pack' %}?year={{ year }}&period_type={{ period_type }}&period_value={{ period_value }}&regime={{ regime }}">
+                Pack Complet (.xlsx)
+            </a>
+        </div>
+    </div>
+
+    {% if vat_data.rows %}
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>N°</th>
+                        <th>Facture</th>
+                        <th>Date Facture</th>
+                        <th>Client / Raison Sociale</th>
+                        <th>ICE Client</th>
+                        <th>Date Règlement</th>
+                        <th>Mode</th>
+                        <th class="numeric">Base HT</th>
+                        <th>Taux</th>
+                        <th class="numeric">TVA Collectée</th>
+                        <th class="numeric">Total TTC</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in vat_data.rows %}
+                        <tr>
+                            <td>{{ r.order_num }}</td>
+                            <td><strong>{{ r.invoice_number }}</strong></td>
+                            <td>{{ r.invoice_date|date:"d/m/Y" }}</td>
+                            <td>{{ r.customer_name }}</td>
+                            <td><code>{{ r.customer_ice }}</code></td>
+                            <td>{{ r.payment_date|date:"d/m/Y" }}</td>
+                            <td><span style="font-size: 0.8rem; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">{{ r.payment_method }}</span></td>
+                            <td class="numeric">{{ r.base_ht|money }} MAD</td>
+                            <td><span style="color: #0f172a; font-weight: 600;">{{ r.tax_rate }} %</span></td>
+                            <td class="numeric" style="color: #c59b27; font-weight: 700;">{{ r.tax_amount|money }} MAD</td>
+                            <td class="numeric">{{ r.total_ttc|money }} MAD</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty-inline">Aucune opération taxable enregistrée sur cette période selon le régime {{ vat_data.regime }}.</p>
+    {% endif %}
+</section>
+{% endif %}
+
+<!-- ============================================== -->
+<!-- CONTENU DE L'ONGLET 2 : JOURNAL DES VENTES     -->
+<!-- ============================================== -->
+{% if active_tab == "ventes" %}
+<section class="panel table-panel">
+    <div class="section-heading" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <div>
+            <p class="eyebrow">GRAND LIVRE AUXILIAIRE</p>
+            <h2>Journal des Ventes de la période</h2>
+        </div>
+        <div style="display: flex; gap: 8px;">
+            <a class="button secondary export-link-sales" href="{% url 'accounting-export-sales-csv' %}?year={{ year }}&period_type={{ period_type }}&period_value={{ period_value }}&regime={{ regime }}">
+                Export CSV (Excel)
+            </a>
+            <a class="button primary export-link-pack" style="background: #0f172a; border-color: #0f172a;" href="{% url 'accounting-export-pack' %}?year={{ year }}&period_type={{ period_type }}&period_value={{ period_value }}&regime={{ regime }}">
+                Pack Complet (.xlsx)
+            </a>
+        </div>
+    </div>
+
+    {% if sales_data.entries %}
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Date Pièce</th>
+                        <th>N° Facture</th>
+                        <th>Client</th>
+                        <th>ICE Client</th>
+                        <th class="numeric">Brut HT</th>
+                        <th class="numeric">Remises</th>
+                        <th class="numeric">Net HT</th>
+                        <th class="numeric">TVA</th>
+                        <th class="numeric">Total TTC</th>
+                        <th>Statut</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for e in sales_data.entries %}
+                        <tr>
+                            <td>{{ e.date|date:"d/m/Y" }}</td>
+                            <td><strong>{{ e.number }}</strong></td>
+                            <td>{{ e.customer_name }}</td>
+                            <td><code>{{ e.customer_ice }}</code></td>
+                            <td class="numeric">{{ e.gross|money }} MAD</td>
+                            <td class="numeric">{{ e.discount|money }} MAD</td>
+                            <td class="numeric">{{ e.net|money }} MAD</td>
+                            <td class="numeric">{{ e.tax|money }} MAD</td>
+                            <td class="numeric"><strong>{{ e.total|money }} MAD</strong></td>
+                            <td><span class="status status-issued">{{ e.status_display }}</span></td>
+                        </tr>
+                    {% endfor %}
+                    <tr style="background: #faf5e8; font-weight: 700; border-top: 2px solid #0f172a;">
+                        <td colspan="4">TOTAUX DU JOURNAL</td>
+                        <td class="numeric">{{ sales_data.totals.gross|money }} MAD</td>
+                        <td class="numeric">{{ sales_data.totals.discount|money }} MAD</td>
+                        <td class="numeric">{{ sales_data.totals.net|money }} MAD</td>
+                        <td class="numeric">{{ sales_data.totals.tax|money }} MAD</td>
+                        <td class="numeric">{{ sales_data.totals.total|money }} MAD</td>
+                        <td></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-top: 32px;">
+            <h3 style="font-size: 1rem; font-weight: 700; color: #0f172a; margin-bottom: 12px;">
+                Écritures comptables en partie double (Plan Comptable Général Marocain)
+            </h3>
+            <div class="table-scroll">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Journal</th>
+                            <th>N° Pièce</th>
+                            <th>Compte</th>
+                            <th>Intitulé du compte</th>
+                            <th>Libellé</th>
+                            <th class="numeric">Débit (MAD)</th>
+                            <th class="numeric">Crédit (MAD)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for a in sales_data.accounting_entries %}
+                            <tr>
+                                <td>{{ a.date|date:"d/m/Y" }}</td>
+                                <td><span style="font-weight: 600;">VE</span></td>
+                                <td>{{ a.piece }}</td>
+                                <td><code>{{ a.account }}</code></td>
+                                <td>{{ a.account_label }}</td>
+                                <td>{{ a.libelle }}</td>
+                                <td class="numeric">{% if a.debit > 0 %}<strong>{{ a.debit|money }}</strong>{% else %}—{% endif %}</td>
+                                <td class="numeric">{% if a.credit > 0 %}<strong>{{ a.credit|money }}</strong>{% else %}—{% endif %}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    {% else %}
+        <p class="empty-inline">Aucune facture émise sur cette période.</p>
+    {% endif %}
+</section>
+{% endif %}
+
+<!-- ============================================== -->
+<!-- CONTENU DE L'ONGLET 3 : JOURNAL DES RÈGLEMENTS -->
+<!-- ============================================== -->
+{% if active_tab == "reglements" %}
+<section class="panel table-panel">
+    <div class="section-heading" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <div>
+            <p class="eyebrow">TRÉSORERIE & ENCAISSEMENTS</p>
+            <h2>Journal des Règlements reçus</h2>
+        </div>
+        <div style="display: flex; gap: 8px;">
+            <a class="button secondary export-link-payments" href="{% url 'accounting-export-payments-csv' %}?year={{ year }}&period_type={{ period_type }}&period_value={{ period_value }}&regime={{ regime }}">
+                Export CSV (Excel)
+            </a>
+            <a class="button primary export-link-pack" style="background: #0f172a; border-color: #0f172a;" href="{% url 'accounting-export-pack' %}?year={{ year }}&period_type={{ period_type }}&period_value={{ period_value }}&regime={{ regime }}">
+                Pack Complet (.xlsx)
+            </a>
+        </div>
+    </div>
+
+    {% if payments_data.entries %}
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Date Règlement</th>
+                        <th>N° Reçu</th>
+                        <th>Mode</th>
+                        <th>Référence</th>
+                        <th>Facture Imputée</th>
+                        <th>Client</th>
+                        <th class="numeric">Montant Encaissé</th>
+                        <th>Remarques</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in payments_data.entries %}
+                        <tr>
+                            <td>{{ p.date|date:"d/m/Y" }}</td>
+                            <td><strong>REG-{{ p.payment_id }}</strong></td>
+                            <td><span style="font-size: 0.8rem; background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 4px; font-weight: 600;">{{ p.method_display }}</span></td>
+                            <td>{{ p.reference }}</td>
+                            <td><a href="{% url 'invoice-list' %}"><strong>{{ p.invoice_number }}</strong></a></td>
+                            <td>{{ p.customer_name }}</td>
+                            <td class="numeric"><strong style="color: #0f172a;">{{ p.amount|money }} MAD</strong></td>
+                            <td><small>{{ p.notes|default:"—" }}</small></td>
+                        </tr>
+                    {% endfor %}
+                    <tr style="background: #faf5e8; font-weight: 700; border-top: 2px solid #0f172a;">
+                        <td colspan="6">TOTAL DES RÈGLEMENTS ENCAISSÉS</td>
+                        <td class="numeric" style="color: #0f172a; font-size: 1.05rem;">{{ payments_data.totals.amount|money }} MAD</td>
+                        <td></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-top: 32px;">
+            <h3 style="font-size: 1rem; font-weight: 700; color: #0f172a; margin-bottom: 12px;">
+                Écritures comptables de trésorerie (Compte 5141 Banque / 5161 Caisse)
+            </h3>
+            <div class="table-scroll">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Journal</th>
+                            <th>N° Pièce</th>
+                            <th>Compte</th>
+                            <th>Intitulé du compte</th>
+                            <th>Libellé</th>
+                            <th class="numeric">Débit (MAD)</th>
+                            <th class="numeric">Crédit (MAD)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for a in payments_data.accounting_entries %}
+                            <tr>
+                                <td>{{ a.date|date:"d/m/Y" }}</td>
+                                <td><span style="font-weight: 600;">TR</span></td>
+                                <td>{{ a.piece }}</td>
+                                <td><code>{{ a.account }}</code></td>
+                                <td>{{ a.account_label }}</td>
+                                <td>{{ a.libelle }}</td>
+                                <td class="numeric">{% if a.debit > 0 %}<strong>{{ a.debit|money }}</strong>{% else %}—{% endif %}</td>
+                                <td class="numeric">{% if a.credit > 0 %}<strong>{{ a.credit|money }}</strong>{% else %}—{% endif %}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    {% else %}
+        <p class="empty-inline">Aucun règlement client enregistré sur cette période.</p>
+    {% endif %}
+</section>
+{% endif %}
+

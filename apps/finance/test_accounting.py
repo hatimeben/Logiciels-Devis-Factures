@@ -233,3 +233,25 @@ class AccountingAndFiduciaryTests(TestCase):
         response_pay = self.client.get(pay_url)
         self.assertEqual(response_pay.status_code, 200)
         self.assertEqual(response_pay["Content-Type"], "text/csv; charset=utf-8-sig")
+
+    def test_accounting_dashboard_ajax_refresh(self):
+        """Vérifie que la requête AJAX renvoie le fragment partiel sans rechargement brutal."""
+        url = reverse("accounting-dashboard") + "?year=2026&period_type=quarter&period_value=3&regime=encaissement&tab=tva"
+        response = self.client.get(url, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+        self.assertEqual(response.status_code, 200)
+
+        # Le fragment partiel contient la synthèse et les onglets, mais pas l'en-tête HTML global
+        self.assertContains(response, "Base HT Imposable")
+        self.assertContains(response, "accounting-tabs")
+        self.assertNotContains(response, "<!doctype html>")
+
+    def test_accounting_dashboard_filter_quarter_and_regime_debit(self):
+        """Vérifie la bonne prise en compte du trimestre et du régime des débits."""
+        url = reverse("accounting-dashboard") + "?year=2026&period_type=quarter&period_value=4&regime=debit&tab=ventes"
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["period_type"], "quarter")
+        self.assertEqual(response.context["period_value"], 4)
+        self.assertEqual(response.context["regime"], "debit")
+        self.assertEqual(response.context["active_tab"], "ventes")
+        self.assertIn("T4 (Octobre - Décembre) 2026", response.context["period_label"])

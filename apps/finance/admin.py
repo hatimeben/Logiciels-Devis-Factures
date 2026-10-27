@@ -193,3 +193,93 @@ class CompanySettingsAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+
+from .models import (
+    CompteComptable,
+    JournalComptable,
+    EcritureComptable,
+    LigneEcriture,
+)
+
+
+@admin.register(CompteComptable)
+class CompteComptableAdmin(admin.ModelAdmin):
+    list_display = ["numero", "intitule", "classe", "sens_normal", "is_active"]
+    list_filter = ["classe", "sens_normal", "is_active"]
+    search_fields = ["numero", "intitule", "description_pedagogique"]
+    ordering = ["numero"]
+
+
+@admin.register(JournalComptable)
+class JournalComptableAdmin(admin.ModelAdmin):
+    list_display = ["code", "intitule", "type_journal", "compte_contrepartie", "is_active"]
+    list_filter = ["type_journal", "is_active"]
+    search_fields = ["code", "intitule", "description_pedagogique"]
+
+
+class LigneEcritureInline(admin.TabularInline):
+    model = LigneEcriture
+    extra = 2
+    fields = ["position", "compte", "libelle_ligne", "debit", "credit"]
+
+
+@admin.register(EcritureComptable)
+class EcritureComptableAdmin(admin.ModelAdmin):
+    list_display = [
+        "numero_piece",
+        "date_comptable",
+        "journal",
+        "reference",
+        "libelle",
+        "statut",
+        "get_total_debit",
+        "get_total_credit",
+        "auteur",
+    ]
+    list_filter = ["journal", "statut", "date_comptable"]
+    search_fields = ["numero_piece", "reference", "libelle", "notes_pedagogiques"]
+    date_hierarchy = "date_comptable"
+    readonly_fields = ["created_at", "updated_at", "date_comptabilisation", "contrepassation_de"]
+    inlines = [LigneEcritureInline]
+
+    @admin.display(description="Total Débit (MAD)")
+    def get_total_debit(self, obj):
+        return f"{obj.total_debit:,.2f} MAD"
+
+    @admin.display(description="Total Crédit (MAD)")
+    def get_total_credit(self, obj):
+        return f"{obj.total_credit:,.2f} MAD"
+
+    actions = ["action_valider_comptabiliser", "action_creer_contrepassation"]
+
+    @admin.action(description="Valider et Comptabiliser (Verrouillage légal Loi 9-88)")
+    def action_valider_comptabiliser(self, request, queryset):
+        succes = 0
+        erreurs = []
+        for ecriture in queryset:
+            try:
+                ecriture.valider_et_comptabiliser(user=request.user)
+                succes += 1
+            except ValidationError as e:
+                erreurs.append(f"{ecriture.numero_piece}: {e.message if hasattr(e, 'message') else str(e)}")
+        if succes:
+            self.message_user(request, f"{succes} écriture(s) validée(s) et comptabilisée(s) avec succès.")
+        if erreurs:
+            self.message_user(request, "Erreurs : " + " | ".join(erreurs), level="ERROR")
+
+    @admin.action(description="Générer une contre-passation (Extourne légale)")
+    def action_creer_contrepassation(self, request, queryset):
+        succes = 0
+        erreurs = []
+        for ecriture in queryset:
+            try:
+                ecriture.creer_contrepassation(user=request.user)
+                succes += 1
+            except ValidationError as e:
+                erreurs.append(f"{ecriture.numero_piece}: {e.message if hasattr(e, 'message') else str(e)}")
+        if succes:
+            self.message_user(request, f"{succes} écriture(s) contre-passée(s) avec succès.")
+        if erreurs:
+            self.message_user(request, "Erreurs : " + " | ".join(erreurs), level="ERROR")
