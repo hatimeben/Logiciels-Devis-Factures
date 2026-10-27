@@ -1,0 +1,94 @@
+{% extends "finance/quotes/base.html" %}
+{% load finance_quotes %}
+{% block title %}Devis{% endblock %}
+{% block content %}
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">VENTES · PRESTATIONS</p>
+        <h1>Devis</h1>
+        <p class="subheading">Consultez et suivez vos propositions commerciales.</p>
+    </div>
+    {% if perms.finance.add_quote %}
+        <a class="button primary" href="{% url 'quote-create' %}">＋ Nouveau devis</a>
+    {% endif %}
+</div>
+
+<section class="panel filter-panel">
+    <form method="get" class="filters">
+        <label class="search-field">
+            <span>Recherche</span>
+            <input type="search" name="q" value="{{ filters.q }}" placeholder="Numéro ou client">
+        </label>
+        <label>
+            <span>Statut</span>
+            <select name="status">
+                <option value="">Tous les statuts</option>
+                {% for value, label in statuses %}
+                    <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            <span>Client</span>
+            <select name="customer">
+                <option value="">Tous les clients</option>
+                {% for customer in customers %}
+                    <option value="{{ customer.pk }}" {% if filters.customer == customer.pk|stringformat:"s" %}selected{% endif %}>{{ customer.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            <span>Du</span>
+            <input type="date" name="date_from" value="{{ filters.date_from }}">
+        </label>
+        <label>
+            <span>Au</span>
+            <input type="date" name="date_to" value="{{ filters.date_to }}">
+        </label>
+        <button class="button secondary" type="submit">Filtrer</button>
+        <a class="button quiet" href="{% url 'quote-list' %}">Effacer</a>
+    </form>
+</section>
+
+<section class="panel table-panel">
+    {% if page.object_list %}
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead>
+                    <tr><th>Numéro</th><th>Client</th><th>Date</th><th>Valable jusqu'au</th><th>Statut</th><th class="numeric">Total TTC</th></tr>
+                </thead>
+                <tbody>
+                    {% for quote in page %}
+                        <tr>
+                            <td><a class="table-link" href="{% url 'quote-detail' quote.pk %}">{{ quote.number|default:"Brouillon" }}</a></td>
+                            <td>{{ quote.customer.name }}</td>
+                            <td>{{ quote.issue_date|date:"d/m/Y"|default:"—" }}</td>
+                            <td>{{ quote.valid_until|date:"d/m/Y"|default:"—" }}</td>
+                            <td><span class="status status-{{ quote.status }}">{{ quote.get_status_display }}</span></td>
+                            <td class="numeric">
+                                {% if quote.status != "draft" %}
+                                    {{ quote|quote_total:"total"|money }} MAD
+                                {% else %}—{% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if page.has_other_pages %}
+            <div class="pagination">
+                {% if page.has_previous %}<a href="?{{ filters.urlencode }}&page={{ page.previous_page_number }}">← Précédent</a>{% endif %}
+                <span>Page {{ page.number }} sur {{ page.paginator.num_pages }}</span>
+                {% if page.has_next %}<a href="?{{ filters.urlencode }}&page={{ page.next_page_number }}">Suivant →</a>{% endif %}
+            </div>
+        {% endif %}
+    {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">D</div>
+            <h2>Aucun devis trouvé</h2>
+            <p>Modifiez vos filtres ou créez votre premier devis.</p>
+            {% if perms.finance.add_quote %}<a class="button primary" href="{% url 'quote-create' %}">Créer un devis</a>{% endif %}
+        </div>
+    {% endif %}
+</section>
+{% endblock %}

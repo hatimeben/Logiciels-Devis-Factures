@@ -1,0 +1,44 @@
+{% load static %}
+<!doctype html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Devis{% endblock %} · BENCHTECH Gestion</title>
+    <link rel="stylesheet" href="{% static 'finance/quotes.css' %}">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <header class="topbar">
+        <a class="brand" href="{% url 'dashboard' %}">
+            <span class="brand-mark" aria-hidden="true">B</span>
+            <span class="brand-name">BENCHTECH<small>GESTION</small></span>
+        </a>
+        <nav aria-label="Navigation principale" class="main-nav">
+            <a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}"><span aria-hidden="true">📊</span> Tableau de bord</a>
+            <a class="nav-link {% if request.resolver_match.url_name == 'quote-list' or request.resolver_match.url_name == 'quote-create' or request.resolver_match.url_name == 'quote-detail' or request.resolver_match.url_name == 'quote-edit' %}active{% endif %}" href="{% url 'quote-list' %}"><span aria-hidden="true">▤</span> Devis</a>
+            {% if perms.finance.view_invoice %}<a class="nav-link {% if request.resolver_match.url_name == 'invoice-list' or request.resolver_match.url_name == 'invoice-create' or request.resolver_match.url_name == 'invoice-detail' or request.resolver_match.url_name == 'invoice-edit' or request.resolver_match.url_name == 'invoice-payment' %}active{% endif %}" href="{% url 'invoice-list' %}"><span aria-hidden="true">▧</span> Factures</a>{% endif %}
+            {% if perms.finance.view_payment %}<a class="nav-link {% if request.resolver_match.url_name == 'payment-list' %}active{% endif %}" href="{% url 'payment-list' %}"><span aria-hidden="true">💳</span> Règlements</a>{% endif %}
+            {% if perms.finance.view_expense %}<a class="nav-link {% if request.resolver_match.url_name == 'expense-list' or request.resolver_match.url_name == 'expense-create' or request.resolver_match.url_name == 'expense-detail' or request.resolver_match.url_name == 'expense-edit' or request.resolver_match.url_name == 'expense-payment' %}active{% endif %}" href="{% url 'expense-list' %}"><span aria-hidden="true">💸</span> Dépenses</a>{% endif %}
+            <a class="nav-link {% if request.resolver_match.url_name == 'company-settings' %}active{% endif %}" href="{% url 'company-settings' %}"><span aria-hidden="true">🏢</span> Entreprise</a>
+            <a class="nav-link" href="/admin/"><span aria-hidden="true">⚙</span> Administration</a>
+        </nav>
+        <a class="user-chip" href="/admin/" title="Administration">
+            <span class="user-avatar" aria-hidden="true">{{ request.user.get_username|slice:":1"|upper }}</span>
+            <span class="user-name">{{ request.user.get_username }}</span>
+            <span class="user-caret" aria-hidden="true">⌄</span>
+        </a>
+    </header>
+    <main class="page">
+        {% if messages %}
+            <div class="messages" role="status">
+                {% for message in messages %}
+                    <div class="message {{ message.tags }}">{{ message }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
+        {% block content %}{% endblock %}
+    </main>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

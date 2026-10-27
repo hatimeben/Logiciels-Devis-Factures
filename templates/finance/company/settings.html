@@ -1,0 +1,190 @@
+{% extends "finance/quotes/base.html" %}
+{% block title %}Paramètres de l'entreprise{% endblock %}
+{% block content %}
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">CONFIGURATION</p>
+        <h1>Paramètres de l'entreprise</h1>
+        <p class="subheading">Personnalisez votre logo, vos coordonnées, mentions fiscales marocaines et coordonnées bancaires.</p>
+    </div>
+</div>
+
+<form method="post" enctype="multipart/form-data" class="quote-form" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+        <div class="form-errors">{{ form.non_field_errors }}</div>
+    {% endif %}
+
+    <!-- Section 1 : Logo et Identité -->
+    <section class="panel form-panel">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">IDENTITÉ VISUELLE</p>
+                <h2>Logo & Raison sociale</h2>
+            </div>
+        </div>
+
+        {% if company.logo %}
+            <div style="margin-bottom: 20px; padding: 16px; background: #f8fafc; border: 1px solid var(--grid, #dbe3ef); border-radius: 8px; display: flex; align-items: center; gap: 20px;">
+                <img src="{{ company.logo.url }}" alt="Logo {{ company.name }}" style="max-height: 70px; max-width: 180px; object-fit: contain; background: white; padding: 6px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
+                <div>
+                    <strong>Logo actuel</strong>
+                    <p style="margin: 4px 0 0 0; font-size: 13px; color: var(--muted, #64748b);">Ce logo apparaîtra automatiquement sur l'en-tête de tous vos devis et factures PDF.</p>
+                </div>
+            </div>
+        {% endif %}
+
+        <div class="form-grid">
+            <div class="field field-wide">
+                <label for="{{ form.logo.id_for_label }}">
+                    {% if company.logo %}Remplacer le logo{% else %}Téléverser le logo (PNG, JPG){% endif %}
+                </label>
+                {{ form.logo }}
+                <small style="color: var(--muted, #64748b);">Format recommandé : PNG avec fond transparent ou JPEG haute résolution.</small>
+                {% for error in form.logo.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+            </div>
+            <div class="field">
+                <label for="{{ form.name.id_for_label }}">Raison sociale / Nom légal *</label>
+                {{ form.name }}
+                {% for error in form.name.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+            </div>
+            <div class="field">
+                <label for="{{ form.legal_form.id_for_label }}">Forme juridique</label>
+                {{ form.legal_form }}
+                {% for error in form.legal_form.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+            </div>
+            <div class="field">
+                <label for="{{ form.capital.id_for_label }}">Capital social (MAD)</label>
+                {{ form.capital }}
+                {% for error in form.capital.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+            </div>
+            <div class="field field-wide">
+                <label for="{{ form.tagline.id_for_label }}">Slogan / Activité</label>
+                {{ form.tagline }}
+                {% for error in form.tagline.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+            </div>
+        </div>
+    </section>
+
+    <!-- Section 2 : Identifiants Légaux Marocains -->
+    <section class="panel form-panel">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">MENTIONS LÉGALES OBLIGATOIRES</p>
+                <h2>Identifiants fiscaux & juridiques (Maroc)</h2>
+            </div>
+        </div>
+        <p style="font-size: 13px; color: var(--muted, #64748b); margin-top: -8px; margin-bottom: 16px;">
+            Ces identifiants figureront automatiquement dans le pied de page légal de chaque devis et facture émis.
+        </p>
+        <div class="form-grid">
+            <div class="field">
+                <label for="{{ form.ice.id_for_label }}">ICE (Identifiant Commun de l'Entreprise)</label>
+                {{ form.ice }}
+                <small style="color: var(--muted, #64748b);">Exactement 15 chiffres.</small>
+                {% for error in form.ice.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+            </div>
+            <div class="field">
+                <label for="{{ form.tax_identifier.id_for_label }}">Identifiant Fiscal (IF)</label>
+                {{ form.tax_identifier }}
+                {% for error in form.tax_identifier.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+            </div>
+            <div class="field">
+                <label for="{{ form.trade_registry.id_for_label }}">Registre du Commerce (RC)</label>
+                {{ form.trade_registry }}
+                <small style="color: var(--muted, #64748b);">Ex: 123456 Casablanca</small>
+                {% for error in form.trade_registry.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+            </div>
+            <div class="field">
+                <label for="{{ form.patente.id_for_label }}">Patente / Taxe professionnelle</label>
+                {{ form.patente }}
+                {% for error in form.patente.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+            </div>
+            <div class="field">
+                <label for="{{ form.cnss.id_for_label }}">N° d'affiliation CNSS</label>
+                {{ form.cnss }}
+                {% for error in form.cnss.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+            </div>
+        </div>
+    </section>
+
+    <!-- Section 3 : Coordonnées de Contact -->
+    <section class="panel form-panel">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">COORDONNÉES</p>
+                <h2>Adresse & Contact</h2>
+            </div>
+        </div>
+        <div class="form-grid">
+            <div class="field field-wide">
+                <label for="{{ form.address.id_for_label }}">Adresse du siège ou établissement</label>
+                {{ form.address }}
+                {% for error in form.address.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+            </div>
+            <div class="field">
+                <label for="{{ form.city.id_for_label }}">Ville</label>
+                {{ form.city }}
+                {% for error in form.city.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+            </div>
+            <div class="field">
+                <label for="{{ form.postal_code.id_for_label }}">Code postal</label>
+                {{ form.postal_code }}
+                {% for error in form.postal_code.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+            </div>
+            <div class="field">
+                <label for="{{ form.country.id_for_label }}">Pays</label>
+                {{ form.country }}
+                {% for error in form.country.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+            </div>
+            <div class="field">
+                <label for="{{ form.phone.id_for_label }}">Téléphone</label>
+                {{ form.phone }}
+                {% for error in form.phone.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+            </div>
+            <div class="field">
+                <label for="{{ form.email.id_for_label }}">Adresse e-mail</label>
+                {{ form.email }}
+                {% for error in form.email.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+            </div>
+            <div class="field">
+                <label for="{{ form.website.id_for_label }}">Site internet</label>
+                {{ form.website }}
+                {% for error in form.website.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+            </div>
+        </div>
+    </section>
+
+    <!-- Section 4 : Coordonnées Bancaires -->
+    <section class="panel form-panel">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">RÈGLEMENTS PAR VIREMENT</p>
+                <h2>Coordonnées bancaires</h2>
+            </div>
+        </div>
+        <p style="font-size: 13px; color: var(--muted, #64748b); margin-top: -8px; margin-bottom: 16px;">
+            Renseignez votre RIB pour qu'il soit directement imprimé sur vos factures afin de faciliter les virements de vos clients.
+        </p>
+        <div class="form-grid">
+            <div class="field">
+                <label for="{{ form.bank_name.id_for_label }}">Nom de la banque</label>
+                {{ form.bank_name }}
+                {% for error in form.bank_name.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+            </div>
+            <div class="field field-wide">
+                <label for="{{ form.rib.id_for_label }}">Relevé d'Identité Bancaire (RIB - 24 chiffres)</label>
+                {{ form.rib }}
+                <small style="color: var(--muted, #64748b);">Ex: 007 780 0001234567890123 45</small>
+                {% for error in form.rib.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+            </div>
+        </div>
+    </section>
+
+    <div class="form-actions">
+        <button class="button primary" type="submit">Enregistrer les paramètres</button>
+        <a class="button quiet" href="{% url 'dashboard' %}">Retour au tableau de bord</a>
+    </div>
+</form>
+{% endblock %}
+

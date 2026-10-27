@@ -1,0 +1,180 @@
+{% extends "finance/quotes/base.html" %}
+{% load finance_quotes %}
+{% block title %}{{ invoice.number|default:"Facture brouillon" }}{% endblock %}
+{% block content %}
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">FACTURE · {{ invoice.get_status_display|upper }}</p>
+        <h1>{{ invoice.number|default:"Facture brouillon" }}</h1>
+        <p class="subheading">{{ customer_snapshot.name }}{% if invoice.quote %} · Issue du devis <a href="{% url 'quote-detail' invoice.quote.pk %}">{{ invoice.quote.number }}</a>{% endif %}</p>
+    </div>
+    <div class="heading-actions">
+        <a class="button quiet" href="{% url 'invoice-list' %}">← Liste</a>
+        <a class="button secondary" href="{% url 'invoice-pdf' invoice.pk %}">{% if invoice.status == "draft" %}Aperçu PDF · brouillon{% else %}Télécharger le PDF{% endif %}</a>
+        {% if invoice.status == "draft" and can_change %}
+            <a class="button secondary" href="{% url 'invoice-edit' invoice.pk %}">Modifier le brouillon</a>
+            <form method="post" action="{% url 'invoice-issue' invoice.pk %}">
+                {% csrf_token %}
+                <button class="button primary" type="submit">Émettre la facture</button>
+            </form>
+        {% endif %}
+        {% if can_add_payment %}
+            <a class="button primary" href="{% url 'invoice-payment' invoice.pk %}">＋ Enregistrer un règlement</a>
+        {% endif %}
+    </div>
+</div>
+
+<section class="summary-grid">
+    <article class="panel summary-card">
+        <span>Client</span>
+        <strong>{{ customer_snapshot.name }}</strong>
+        <small>{{ customer_snapshot.email|default:"" }}</small>
+    </article>
+    <article class="panel summary-card">
+        <span>Date d’émission & Échéance</span>
+        <strong>{{ invoice.issue_date|date:"d/m/Y"|default:"—" }}</strong>
+        {% if invoice.due_date %}
+            <small>Échéance : {{ invoice.due_date|date:"d/m/Y" }}</small>
+        {% else %}
+            <small>Devise : MAD</small>
+        {% endif %}
+    </article>
+    <article class="panel summary-card">
+        <span>Statut</span>
+        <strong><span class="status status-{{ invoice.status }}">{{ invoice.get_status_display }}</span></strong>
+        <small>{% if invoice.project %}Projet : {{ invoice.project.name }}{% else %}Aucun projet associé{% endif %}</small>
+    </article>
+    <article class="panel summary-card">
+        <span>Règlement</span>
+        <strong>
+            {% if invoice.status == "draft" %}
+                {{ totals.total|money }} MAD
+            {% else %}
+                {% if invoice.remaining_balance == 0 %}
+                    <span style="color: #15803d;">Soldée (0,00 MAD)</span>
+                {% else %}
+                    Reste : {{ invoice.remaining_balance|money }} MAD
+                {% endif %}
+            {% endif %}
+        </strong>
+        <small>Total TTC : {{ totals.total|money }} MAD · Réglé : {{ invoice.total_paid|money }} MAD</small>
+    </article>
+</section>
+
+<section class="panel table-panel">
+    <div class="section-heading invoice-section-heading"><div><p class="eyebrow">DÉTAIL</p><h2>Prestations facturées</h2></div></div>
+    <div class="table-scroll">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Désignation</th>
+                    <th class="numeric">Quantité</th>
+                    <th class="numeric">Prix unitaire HT</th>
+                    {% if has_discount %}<th>Remise</th>{% endif %}
+                    <th>Taxe</th>
+                    <th class="numeric">Net HT</th>
+                    <th class="numeric">Total TTC</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for line in lines %}
+                    <tr>
+                        <td>{{ line.description }}</td>
+                        <td class="numeric">{{ line.quantity }}</td>
+                        <td class="numeric">{{ line.unit_price|money }} MAD</td>
+                        {% if has_discount %}
+                            <td>{% if line.discount_value > 0 %}{% if line.discount_type == "percentage" %}{{ line.discount_value }} %{% else %}{{ line.discount_value|money }} MAD{% endif %}{% else %}—{% endif %}</td>
+                        {% endif %}
+                        <td>{{ line.tax_name }}{% if line.tax_percentage %} · {{ line.tax_percentage }} %{% endif %}</td>
+                        <td class="numeric">{{ line.amounts.net|money }} MAD</td>
+                        <td class="numeric">{{ line.amounts.total|money }} MAD</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="{% if has_discount %}7{% else %}6{% endif %}">Aucune ligne de facture.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="detail-totals">
+        {% if has_discount %}
+            <div><span>Total brut HT</span><strong>{{ totals.gross|money }} MAD</strong></div>
+            <div><span>Remises</span><strong>− {{ totals.discount|money }} MAD</strong></div>
+            <div><span>Total net HT</span><strong>{{ totals.net|money }} MAD</strong></div>
+        {% else %}
+            <div><span>Total HT</span><strong>{{ totals.net|money }} MAD</strong></div>
+        {% endif %}
+        <div><span>Taxes</span><strong>{{ totals.tax|money }} MAD</strong></div>
+        <div class="grand-total"><span>Total TTC</span><strong>{{ totals.total|money }} MAD</strong></div>
+    </div>
+</section>
+
+{% if invoice.status != "draft" %}
+<section class="panel table-panel">
+    <div class="section-heading">
+        <div><p class="eyebrow">ENCAISSEMENTS</p><h2>Règlements reçus</h2></div>
+        {% if can_add_payment %}
+            <a class="button secondary" href="{% url 'invoice-payment' invoice.pk %}">＋ Ajouter un règlement</a>
+        {% endif %}
+    </div>
+    {% if allocations %}
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Date du règlement</th>
+                        <th>Mode</th>
+                        <th>Référence</th>
+                        <th>Notes</th>
+                        <th class="numeric">Montant imputé</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for alloc in allocations %}
+                        <tr>
+                            <td>{{ alloc.payment.payment_date|date:"d/m/Y" }}</td>
+                            <td>{{ alloc.payment.get_method_display }}</td>
+                            <td>{{ alloc.payment.reference|default:"—" }}</td>
+                            <td>{{ alloc.payment.notes|default:"—" }}</td>
+                            <td class="numeric"><strong>{{ alloc.amount|money }} MAD</strong></td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="detail-totals">
+            <div><span>Total TTC facturé</span><strong>{{ totals.total|money }} MAD</strong></div>
+            <div><span>Total encaissé</span><strong>{{ invoice.total_paid|money }} MAD</strong></div>
+            <div class="grand-total"><span>Reste à payer</span><strong>{{ invoice.remaining_balance|money }} MAD</strong></div>
+        </div>
+    {% else %}
+        <p class="empty-inline">Aucun règlement n'a encore été enregistré pour cette facture.</p>
+    {% endif %}
+</section>
+{% endif %}
+
+{% if invoice.notes %}
+    <section class="panel form-panel">
+        <p class="eyebrow">NOTES</p>
+        <p class="notes">{{ invoice.notes|linebreaksbr }}</p>
+    </section>
+{% endif %}
+
+<section class="panel form-panel">
+    <div class="section-heading"><div><p class="eyebrow">TRAÇABILITÉ</p><h2>Historique</h2></div></div>
+    {% if history %}
+        <ul class="history-list">
+            {% for entry in history %}
+                <li>
+                    <span class="history-dot"></span>
+                    <div>
+                        <strong>{{ entry.get_event_display }}</strong>
+                        <small>{{ entry.created_at|date:"d/m/Y H:i" }} · {{ entry.snapshot.actor_username|default:entry.actor.username|default:"Utilisateur supprimé" }}</small>
+                    </div>
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p class="empty-inline">Aucun événement enregistré.</p>
+    {% endif %}
+</section>
+{% endblock %}

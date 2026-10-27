@@ -1,0 +1,64 @@
+{% load static %}
+<!doctype html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Connexion · BENCHTECH Gestion</title>
+    <link rel="stylesheet" href="{% static 'finance/quotes.css' %}">
+</head>
+<body class="login-page">
+    <main class="login-shell">
+        <section class="login-brand-panel">
+            <a class="brand login-brand" href="{% url 'login' %}">
+                <span class="brand-mark" aria-hidden="true">B</span>
+                <span class="brand-name">BENCHTECH<small>GESTION</small></span>
+            </a>
+            <div class="login-intro">
+                <span class="login-kicker">VOTRE ESPACE PROFESSIONNEL</span>
+                <h1>La gestion de votre activité, simplement.</h1>
+                <p>Retrouvez vos devis et vos outils de gestion dans un espace sécurisé.</p>
+            </div>
+            <div class="login-brand-footer">BENCHTECH Gestion <span>·</span> MAD</div>
+        </section>
+        <section class="login-form-panel">
+            <div class="login-form-heading">
+                <span class="login-icon" aria-hidden="true">↗</span>
+                <p class="eyebrow">BON RETOUR</p>
+                <h2>Se connecter</h2>
+                <p>Utilisez les identifiants de votre compte.</p>
+            </div>
+            {% if form.errors %}
+                <div class="login-error" role="alert">Nom d’utilisateur ou mot de passe incorrect. Vérifiez vos informations et réessayez.</div>
+            {% endif %}
+            {% if next and user.is_authenticated %}
+                <div class="login-error" role="alert">Votre compte n’a pas l’autorisation d’accéder à cette page.</div>
+            {% endif %}
+            <form method="post" class="login-form">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ next|default:'/devis/' }}">
+                <label for="{{ form.username.id_for_label }}">Nom d’utilisateur</label>
+                <input
+                    type="text"
+                    name="{{ form.username.html_name }}"
+                    id="{{ form.username.id_for_label }}"
+                    value="{{ form.username.value|default:'' }}"
+                    autocomplete="username"
+                    autofocus
+                    required
+                >
+                <label for="{{ form.password.id_for_label }}">Mot de passe</label>
+                <input
+                    type="password"
+                    name="{{ form.password.html_name }}"
+                    id="{{ form.password.id_for_label }}"
+                    autocomplete="current-password"
+                    required
+                >
+                <button class="button primary login-submit" type="submit">Se connecter <span aria-hidden="true">→</span></button>
+            </form>
+            <a class="login-admin-link" href="/admin/">Accéder à l’administration</a>
+        </section>
+    </main>
+</body>
+</html>

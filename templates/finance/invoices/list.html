@@ -1,0 +1,50 @@
+{% extends "finance/quotes/base.html" %}
+{% load finance_quotes %}
+{% block title %}Factures{% endblock %}
+{% block content %}
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">VENTES · FACTURATION</p>
+        <h1>Factures</h1>
+        <p class="subheading">Consultez et émettez vos factures de prestations.</p>
+    </div>
+    {% if perms.finance.add_invoice %}
+        <a class="button primary" href="{% url 'invoice-create' %}">＋ Nouvelle facture</a>
+    {% endif %}
+</div>
+<section class="panel filter-panel">
+    <form method="get" class="filters">
+        <label class="search-field"><span>Recherche</span><input type="search" name="q" value="{{ filters.q }}" placeholder="Numéro ou client"></label>
+        <label><span>Statut</span><select name="status"><option value="">Tous les statuts</option>{% for value, label in statuses %}<option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+        <label><span>Du</span><input type="date" name="date_from" value="{{ filters.date_from }}"></label>
+        <label><span>Au</span><input type="date" name="date_to" value="{{ filters.date_to }}"></label>
+        <button class="button secondary" type="submit">Filtrer</button>
+        <a class="button quiet" href="{% url 'invoice-list' %}">Effacer</a>
+    </form>
+</section>
+<section class="panel table-panel">
+    {% if page.object_list %}
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead><tr><th>Numéro</th><th>Client</th><th>Devis source</th><th>Date</th><th>Échéance</th><th>Statut</th><th class="numeric">Total TTC</th></tr></thead>
+                <tbody>
+                    {% for invoice in page %}
+                        <tr>
+                            <td><a class="table-link" href="{% url 'invoice-detail' invoice.pk %}">{{ invoice.number|default:"Brouillon" }}</a></td>
+                            <td>{{ invoice.customer_snapshot.name|default:invoice.customer.name }}</td>
+                            <td>{% if invoice.quote %}<a href="{% url 'quote-detail' invoice.quote.pk %}">{{ invoice.quote.number }}</a>{% else %}—{% endif %}</td>
+                            <td>{{ invoice.issue_date|date:"d/m/Y"|default:"—" }}</td>
+                            <td>{{ invoice.due_date|date:"d/m/Y"|default:"—" }}</td>
+                            <td><span class="status status-{{ invoice.status }}">{{ invoice.get_status_display }}</span></td>
+                            <td class="numeric">{{ invoice|quote_total:"total"|money }} MAD</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if page.has_other_pages %}<div class="pagination">{% if page.has_previous %}<a href="?{{ filters.urlencode }}&page={{ page.previous_page_number }}">← Précédent</a>{% endif %}<span>Page {{ page.number }} sur {{ page.paginator.num_pages }}</span>{% if page.has_next %}<a href="?{{ filters.urlencode }}&page={{ page.next_page_number }}">Suivant →</a>{% endif %}</div>{% endif %}
+    {% else %}
+        <div class="empty-state"><div class="empty-icon">F</div><h2>Aucune facture</h2><p>Créez une facture directement ou convertissez un devis accepté.</p>{% if perms.finance.add_invoice %}<a class="button primary" href="{% url 'invoice-create' %}">Créer une facture</a>{% endif %}</div>
+    {% endif %}
+</section>
+{% endblock %}

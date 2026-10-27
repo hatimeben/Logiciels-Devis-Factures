@@ -1,0 +1,54 @@
+{% extends "finance/quotes/base.html" %}
+{% load finance_quotes %}
+{% block title %}Règlement · {{ invoice.number }}{% endblock %}
+{% block content %}
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">RÈGLEMENT CLIENT</p>
+        <h1>Enregistrer un règlement</h1>
+        <p class="subheading">Facture {{ invoice.number }} · {{ invoice.customer_snapshot.name|default:invoice.customer.name }}</p>
+    </div>
+    <a class="button quiet" href="{% url 'invoice-detail' invoice.pk %}">← Retour à la facture</a>
+</div>
+
+<section class="summary-grid">
+    <article class="panel summary-card">
+        <span>Total TTC</span>
+        <strong>{{ invoice.total_ttc|money }} MAD</strong>
+        <small>Montant total facturé</small>
+    </article>
+    <article class="panel summary-card">
+        <span>Déjà réglé</span>
+        <strong>{{ invoice.total_paid|money }} MAD</strong>
+        <small>{{ invoice.payment_allocations.count }} règlement(s)</small>
+    </article>
+    <article class="panel summary-card">
+        <span>Reste à payer</span>
+        <strong><span style="color: #b91c1c;">{{ remaining|money }} MAD</span></strong>
+        <small>Solde exigible</small>
+    </article>
+</section>
+
+<form method="post" class="quote-form" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    <section class="panel form-panel">
+        <div class="section-heading"><div><p class="eyebrow">DÉTAIL DU PAIEMENT</p><h2>Informations d'encaissement</h2></div></div>
+        <div class="form-grid">
+            {% for field in form %}
+                <div class="field {% if field.name == 'notes' %}field-wide{% endif %}">
+                    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% for error in field.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+                </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <div class="form-actions">
+        <button class="button primary" type="submit">Valider et imputer le règlement</button>
+        <a class="button quiet" href="{% url 'invoice-detail' invoice.pk %}">Annuler</a>
+    </div>
+</form>
+{% endblock %}
+

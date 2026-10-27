@@ -1,0 +1,56 @@
+{% extends "finance/quotes/base.html" %}
+{% load finance_quotes %}
+{% block title %}Paiement dépense · {{ expense.description }}{% endblock %}
+{% block content %}
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">RÈGLEMENT FOURNISSEUR</p>
+        <h1>Enregistrer un paiement de dépense</h1>
+        <p class="subheading">{{ expense.description }}{% if expense.supplier %} · Fournisseur : {{ expense.supplier.name }}{% endif %}</p>
+    </div>
+    <a class="button quiet" href="{% url 'expense-detail' expense.pk %}">← Retour à la dépense</a>
+</div>
+
+<section class="summary-grid">
+    <article class="panel summary-card">
+        <span>Montant total</span>
+        <strong>{{ expense.amount|money }} MAD</strong>
+        <small>Date : {{ expense.expense_date|date:"d/m/Y" }}</small>
+    </article>
+    <article class="panel summary-card">
+        <span>Déjà payé</span>
+        <strong><span style="color: #15803d;">{{ expense.amount_paid|money }} MAD</span></strong>
+        <small>{{ expense.payments.count }} paiement(s)</small>
+    </article>
+    <article class="panel summary-card">
+        <span>Solde restant</span>
+        <strong><span style="color: #b91c1c;">{{ remaining|money }} MAD</span></strong>
+        <small>Montant maximum payable</small>
+    </article>
+</section>
+
+<form method="post" class="quote-form" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
+
+    <section class="panel form-panel">
+        <div class="section-heading"><div><p class="eyebrow">DÉTAIL DU RÈGLEMENT</p><h2>Informations de paiement</h2></div></div>
+        <div class="form-grid">
+            {% for field in form.visible_fields %}
+                <div class="field {% if field.name == 'notes' %}field-wide{% endif %}">
+                    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% for error in field.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+                </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <div class="form-actions">
+        <button class="button primary" type="submit">Valider le paiement fournisseur</button>
+        <a class="button quiet" href="{% url 'expense-detail' expense.pk %}">Annuler</a>
+    </div>
+</form>
+{% endblock %}
+

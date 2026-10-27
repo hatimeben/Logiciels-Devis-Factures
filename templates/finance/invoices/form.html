@@ -1,0 +1,123 @@
+{% extends "finance/quotes/base.html" %}
+{% load finance_quotes static %}
+{% block title %}{{ page_title }}{% endblock %}
+{% block content %}
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">FACTURE · BROUILLON</p>
+        <h1>{{ page_title }}</h1>
+        <p class="subheading">Les prix sont exprimés hors taxes. Aucun numéro n’est attribué avant l’émission.</p>
+    </div>
+    <a class="button quiet" href="{% if invoice %}{% url 'invoice-detail' invoice.pk %}{% else %}{% url 'invoice-list' %}{% endif %}">← Retour</a>
+</div>
+
+<form method="post" class="quote-form" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    <section class="panel form-panel">
+        <div class="section-heading"><div><p class="eyebrow">INFORMATIONS</p><h2>Client et échéance</h2></div></div>
+        <div class="form-grid">
+            {% for field in form %}
+                <div class="field {% if field.name == 'notes' %}field-wide{% endif %}">
+                    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% for error in field.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+                </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    {% if formset %}
+    <section class="panel form-panel">
+        <div class="section-heading">
+            <div><p class="eyebrow">PRESTATIONS</p><h2>Lignes de la facture</h2></div>
+            <button class="button secondary" type="button" id="add-line">＋ Ajouter une ligne</button>
+        </div>
+        {{ formset.management_form }}
+        {% if formset.non_form_errors %}<div class="form-errors">{{ formset.non_form_errors }}</div>{% endif %}
+        <div class="line-list" id="line-list">
+            {% for line_form in formset %}
+                <article class="quote-line" data-line>
+                    {% for hidden in line_form.hidden_fields %}{{ hidden }}{% endfor %}
+                    <div class="line-fields">
+                        <div class="field field-service">
+                            <label for="{{ line_form.service.id_for_label }}">Prestation du catalogue</label>
+                            {{ line_form.service }}
+                            {% for error in line_form.service.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+                        </div>
+                        <div class="field field-description">
+                            <label for="{{ line_form.description.id_for_label }}">Désignation</label>
+                            {{ line_form.description }}
+                            {% for error in line_form.description.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+                        </div>
+                        <div class="field field-quantity">
+                            <label for="{{ line_form.quantity.id_for_label }}">Quantité</label>
+                            {{ line_form.quantity }}
+                            {% for error in line_form.quantity.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+                        </div>
+                        <div class="field field-price">
+                            <label for="{{ line_form.unit_price.id_for_label }}">Prix unitaire HT (MAD)</label>
+                            {{ line_form.unit_price }}
+                            {% for error in line_form.unit_price.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+                        </div>
+                        <div class="field field-discount-type">
+                            <label for="{{ line_form.discount_type.id_for_label }}">Type de remise</label>
+                            {{ line_form.discount_type }}
+                        </div>
+                        <div class="field field-discount-value">
+                            <label for="{{ line_form.discount_value.id_for_label }}">Remise</label>
+                            {{ line_form.discount_value }}
+                            {% for error in line_form.discount_value.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+                        </div>
+                        <div class="field field-tax">
+                            <label for="{{ line_form.tax_rate.id_for_label }}">Taxe applicable</label>
+                            {{ line_form.tax_rate }}
+                        </div>
+                        <div class="line-total">
+                            <span>Total HT de la ligne</span>
+                            <strong data-line-total>0,00 MAD</strong>
+                        </div>
+                        {% if line_form.DELETE %}
+                            <div class="delete-field">{{ line_form.DELETE }}<button class="button quiet remove-line" type="button" aria-label="Supprimer cette ligne">Supprimer la ligne</button></div>
+                        {% endif %}
+                    </div>
+                    {% if line_form.non_field_errors %}<div class="form-errors">{{ line_form.non_field_errors }}</div>{% endif %}
+                </article>
+            {% endfor %}
+        </div>
+        <template id="empty-line-template">
+            <article class="quote-line" data-line>
+                {% for hidden in formset.empty_form.hidden_fields %}{{ hidden }}{% endfor %}
+                <div class="line-fields">
+                    <div class="field field-service"><label for="{{ formset.empty_form.service.id_for_label }}">Prestation du catalogue</label>{{ formset.empty_form.service }}</div>
+                    <div class="field field-description"><label for="{{ formset.empty_form.description.id_for_label }}">Désignation</label>{{ formset.empty_form.description }}</div>
+                    <div class="field field-quantity"><label for="{{ formset.empty_form.quantity.id_for_label }}">Quantité</label>{{ formset.empty_form.quantity }}</div>
+                    <div class="field field-price"><label for="{{ formset.empty_form.unit_price.id_for_label }}">Prix unitaire HT (MAD)</label>{{ formset.empty_form.unit_price }}</div>
+                    <div class="field field-discount-type"><label for="{{ formset.empty_form.discount_type.id_for_label }}">Type de remise</label>{{ formset.empty_form.discount_type }}</div>
+                    <div class="field field-discount-value"><label for="{{ formset.empty_form.discount_value.id_for_label }}">Remise</label>{{ formset.empty_form.discount_value }}</div>
+                    <div class="field field-tax"><label for="{{ formset.empty_form.tax_rate.id_for_label }}">Taxe applicable</label>{{ formset.empty_form.tax_rate }}</div>
+                    <div class="line-total"><span>Total HT de la ligne</span><strong data-line-total>0,00 MAD</strong></div>
+                    <div class="delete-field">{{ formset.empty_form.DELETE }}<button class="button quiet remove-line" type="button" aria-label="Supprimer cette ligne">Supprimer la ligne</button></div>
+                </div>
+            </article>
+        </template>
+    </section>
+
+    <section class="panel totals-panel">
+        <p class="eyebrow">APERÇU CALCULÉ</p>
+        <div><span>Total brut HT</span><strong data-total-gross>0,00 MAD</strong></div>
+        <div><span>Remises</span><strong data-total-discount>0,00 MAD</strong></div>
+        <div><span>Total net HT</span><strong data-total-net>0,00 MAD</strong></div>
+        <div><span>Taxes</span><strong data-total-tax>0,00 MAD</strong></div>
+        <div class="grand-total"><span>Total TTC</span><strong data-total-total>0,00 MAD</strong></div>
+        <small>Les montants définitifs sont recalculés et validés côté serveur.</small>
+    </section>
+    {% endif %}
+
+    <div class="form-actions">
+        <button class="button primary" type="submit">Enregistrer le brouillon</button>
+        <a class="button quiet" href="{% if invoice %}{% url 'invoice-detail' invoice.pk %}{% else %}{% url 'invoice-list' %}{% endif %}">Annuler</a>
+    </div>
+</form>
+{% endblock %}
+{% block scripts %}<script src="{% static 'finance/quotes.js' %}" defer></script>{% endblock %}

@@ -1,0 +1,108 @@
+{% extends "finance/quotes/base.html" %}
+{% load finance_quotes %}
+{% block title %}{{ quote.number|default:"Brouillon" }}{% endblock %}
+{% block content %}
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">DEVIS · {{ quote.get_status_display|upper }}</p>
+        <h1>{{ quote.number|default:"Brouillon" }}</h1>
+        <p class="subheading">{{ customer_snapshot.name }}{% if quote.revision_of %} · Version de {{ quote.revision_of.number }}{% endif %}</p>
+    </div>
+    <div class="heading-actions">
+        <a class="button quiet" href="{% url 'quote-list' %}">← Liste</a>
+        <a class="button secondary" href="{% url 'quote-pdf' quote.pk %}">{% if quote.status == "draft" %}Aperçu PDF · brouillon{% else %}Télécharger le PDF{% endif %}</a>
+        {% if quote.status == "draft" and can_edit %}<a class="button secondary" href="{% url 'quote-edit' quote.pk %}">Modifier le brouillon</a>{% endif %}
+        {% if quote.status == "draft" and can_edit %}
+            <form method="post" action="{% url 'quote-send' quote.pk %}">{% csrf_token %}<button class="button primary" type="submit">Envoyer le devis</button></form>
+        {% endif %}
+        {% if can_convert %}
+            <form method="post" action="{% url 'invoice-convert' quote.pk %}">{% csrf_token %}<button class="button primary" type="submit">Convertir en facture</button></form>
+        {% endif %}
+        {% if quote.status == "converted" and quote.invoice %}
+            <a class="button secondary" href="{% url 'invoice-detail' quote.invoice.pk %}">Voir la facture liée</a>
+        {% endif %}
+        {% if quote.status == "sent" and can_edit %}
+            <form method="post" action="{% url 'quote-change-status' quote.pk %}">{% csrf_token %}<input type="hidden" name="status" value="accepted"><button class="button primary" type="submit">Marquer accepté</button></form>
+            <form method="post" action="{% url 'quote-change-status' quote.pk %}">{% csrf_token %}<input type="hidden" name="status" value="rejected"><button class="button danger" type="submit">Marquer refusé</button></form>
+        {% endif %}
+        {% if quote.status == "sent" or quote.status == "accepted" %}
+            {% if can_add %}
+                <form method="post" action="{% url 'quote-revision' quote.pk %}">{% csrf_token %}<button class="button secondary" type="submit">Créer une nouvelle version</button></form>
+            {% endif %}
+        {% endif %}
+    </div>
+</div>
+
+<section class="summary-grid">
+    <article class="panel summary-card"><span>Client</span><strong>{{ customer_snapshot.name }}</strong><small>{{ customer_snapshot.email|default:"" }}</small></article>
+    <article class="panel summary-card"><span>Date d'émission</span><strong>{{ quote.issue_date|date:"d/m/Y"|default:"—" }}</strong><small>Créé le {{ quote.created_at|date:"d/m/Y" }}</small></article>
+    {% if quote.valid_until %}
+        <article class="panel summary-card"><span>Validité</span><strong>{{ quote.valid_until|date:"d/m/Y" }}</strong><small>Devise : MAD</small></article>
+    {% else %}
+        <article class="panel summary-card"><span>Devise</span><strong>MAD</strong><small>Dirham marocain</small></article>
+    {% endif %}
+    <article class="panel summary-card"><span>Statut</span><strong><span class="status status-{{ quote.status }}">{{ quote.get_status_display }}</span></strong><small>{% if quote.project %}Projet : {{ quote.project.name }}{% else %}Aucun projet associé{% endif %}</small></article>
+</section>
+
+<section class="panel table-panel">
+    <div class="section-heading"><div><p class="eyebrow">DÉTAIL</p><h2>Prestations</h2></div></div>
+    {% if lines %}
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Désignation</th>
+                        <th class="numeric">Quantité</th>
+                        <th class="numeric">Prix unitaire HT</th>
+                        {% if has_discount %}<th>Remise</th>{% endif %}
+                        <th>Taxe</th>
+                        <th class="numeric">Net HT</th>
+                        <th class="numeric">Total TTC</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for line in lines %}
+                        <tr>
+                            <td>{{ line.description }}</td>
+                            <td class="numeric">{{ line.quantity }}</td>
+                            <td class="numeric">{{ line.unit_price|money }} MAD</td>
+                            {% if has_discount %}
+                                <td>{% if line.discount_value > 0 %}{% if line.discount_type == "percentage" %}{{ line.discount_value }} %{% else %}{{ line.discount_value|money }} MAD{% endif %}{% else %}—{% endif %}</td>
+                            {% endif %}
+                            <td>{{ line.tax_name }}{% if line.tax_percentage %} · {{ line.tax_percentage }} %{% endif %}</td>
+                            <td class="numeric">{{ line.amounts.net|money }} MAD</td>
+                            <td class="numeric">{{ line.amounts.total|money }} MAD</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty-inline">Aucune ligne de prestation n'a encore été ajoutée.</p>
+    {% endif %}
+    <div class="detail-totals">
+        {% if has_discount %}
+            <div><span>Total brut HT</span><strong>{{ totals.gross|money }} MAD</strong></div>
+            <div><span>Remises</span><strong>− {{ totals.discount|money }} MAD</strong></div>
+            <div><span>Total net HT</span><strong>{{ totals.net|money }} MAD</strong></div>
+        {% else %}
+            <div><span>Total HT</span><strong>{{ totals.net|money }} MAD</strong></div>
+        {% endif %}
+        <div><span>Taxes</span><strong>{{ totals.tax|money }} MAD</strong></div>
+        <div class="grand-total"><span>Total TTC</span><strong>{{ totals.total|money }} MAD</strong></div>
+    </div>
+</section>
+
+{% if quote.notes %}<section class="panel form-panel"><p class="eyebrow">NOTES</p><p class="notes">{{ quote.notes|linebreaksbr }}</p></section>{% endif %}
+{% if quote.revisions.all %}<section class="panel form-panel"><p class="eyebrow">VERSIONS LIÉES</p>{% for revision in quote.revisions.all %}<p><a href="{% url 'quote-detail' revision.pk %}">{{ revision.number|default:"Brouillon" }} · {{ revision.get_status_display }}</a></p>{% endfor %}</section>{% endif %}
+<section class="panel form-panel">
+    <div class="section-heading"><div><p class="eyebrow">TRAÇABILITÉ</p><h2>Historique</h2></div></div>
+    {% if history %}
+        <ul class="history-list">
+            {% for entry in history %}
+                <li><span class="history-dot"></span><div><strong>{{ entry.get_event_display }}</strong><small>{{ entry.created_at|date:"d/m/Y H:i" }} · {{ entry.snapshot.actor_username|default:entry.actor.username|default:"Utilisateur supprimé" }}</small></div></li>
+            {% endfor %}
+        </ul>
+    {% else %}<p class="empty-inline">Aucun événement enregistré.</p>{% endif %}
+</section>
+{% endblock %}

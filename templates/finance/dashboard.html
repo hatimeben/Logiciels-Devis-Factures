@@ -1,0 +1,246 @@
+{% extends "finance/quotes/base.html" %}
+{% load finance_quotes %}
+{% block title %}Tableau de bord{% endblock %}
+{% block content %}
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">PILOTAGE & ACTIVITÉ</p>
+        <h1>Tableau de bord</h1>
+        <p class="subheading">Synthèse financière au {{ today|date:"d F Y" }} · BENCHTECH Gestion</p>
+    </div>
+    <div class="heading-actions">
+        {% if perms.finance.add_quote %}
+            <a class="button quiet" href="{% url 'quote-create' %}">＋ Devis</a>
+        {% endif %}
+        {% if perms.finance.add_invoice %}
+            <a class="button quiet" href="{% url 'invoice-create' %}">＋ Facture</a>
+        {% endif %}
+        {% if perms.finance.add_expense %}
+            <a class="button primary" href="{% url 'expense-create' %}">＋ Dépense</a>
+        {% endif %}
+    </div>
+</div>
+
+<!-- KPIs Principaux -->
+<section class="summary-grid">
+    <article class="panel summary-card">
+        <span>CA Facturé (Mois / Année)</span>
+        <strong>{{ invoiced_month|money }} MAD</strong>
+        <small>Total année : {{ invoiced_year|money }} MAD TTC</small>
+    </article>
+    <article class="panel summary-card">
+        <span>Encaissements (Mois / Global)</span>
+        <strong><span style="color: #15803d;">{{ payments_month|money }} MAD</span></strong>
+        <small>Total encaissé : {{ payments_global|money }} MAD</small>
+    </article>
+    <article class="panel summary-card">
+        <span>Créances clients à recouvrer</span>
+        <strong>
+            {% if pending_receivables > 0 %}
+                <span style="color: #b91c1c;">{{ pending_receivables|money }} MAD</span>
+            {% else %}
+                <span style="color: #15803d;">0,00 MAD</span>
+            {% endif %}
+        </strong>
+        <small>
+            {% if overdue_count > 0 %}
+                ⚠️ {{ overdue_count }} facture(s) en retard ({{ overdue_total|money }} MAD)
+            {% else %}
+                Aucun retard de paiement
+            {% endif %}
+        </small>
+    </article>
+    <article class="panel summary-card">
+        <span>Solde de trésorerie net</span>
+        <strong>
+            {% if net_cashflow_global >= 0 %}
+                <span style="color: #15803d;">+ {{ net_cashflow_global|money }} MAD</span>
+            {% else %}
+                <span style="color: #b91c1c;">{{ net_cashflow_global|money }} MAD</span>
+            {% endif %}
+        </strong>
+        <small>Encaissé − Dépenses payées (Mois : {{ net_cashflow_month|money }} MAD)</small>
+    </article>
+</section>
+
+<!-- Alertes retards si existantes -->
+{% if overdue_count > 0 %}
+<section class="panel table-panel" style="border-left: 4px solid #b91c1c;">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow" style="color: #b91c1c;">ATTENTION · RETARD D’ÉCHÉANCE</p>
+            <h2>Factures échues non soldées ({{ overdue_count }})</h2>
+        </div>
+        <span style="font-weight: 700; color: #b91c1c;">Total dû : {{ overdue_total|money }} MAD</span>
+    </div>
+    <div class="table-scroll">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Numéro</th>
+                    <th>Client</th>
+                    <th>Échéance</th>
+                    <th>Total TTC</th>
+                    <th>Déjà réglé</th>
+                    <th class="numeric">Reste à payer</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for inv in overdue_invoices %}
+                    <tr>
+                        <td><a class="table-link" href="{% url 'invoice-detail' inv.pk %}"><strong>{{ inv.number }}</strong></a></td>
+                        <td>{{ inv.customer_snapshot.name|default:inv.customer.name }}</td>
+                        <td><span style="color: #b91c1c; font-weight: 600;">{{ inv.due_date|date:"d/m/Y" }}</span></td>
+                        <td>{{ inv.total_ttc|money }} MAD</td>
+                        <td>{{ inv.total_paid|money }} MAD</td>
+                        <td class="numeric"><strong style="color: #b91c1c;">{{ inv.remaining_balance|money }} MAD</strong></td>
+                        <td>
+                            {% if perms.finance.add_payment %}
+                                <a class="button quiet" href="{% url 'invoice-payment' inv.pk %}" style="padding: 3px 8px; font-size: 12px;">Encaisser</a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endif %}
+
+<!-- Activité Commerciale et Financière -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px;">
+    <!-- Colonne Devis & Factures -->
+    <div style="display: flex; flex-direction: column; gap: 16px;">
+        <!-- Pipeline Devis -->
+        <section class="panel">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">VENTES</p>
+                    <h2>Pipeline des devis</h2>
+                </div>
+                <span class="status status-accepted" title="Taux de conversion">{{ conversion_rate }} % convertis</span>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; text-align: center; margin-top: 8px;">
+                <div style="padding: 10px; background: #f8fafc; border-radius: 6px;">
+                    <span style="display: block; font-size: 11px; color: #64748b;">Brouillons</span>
+                    <strong style="font-size: 18px;">{{ quotes_draft }}</strong>
+                </div>
+                <div style="padding: 10px; background: #eff6ff; border-radius: 6px;">
+                    <span style="display: block; font-size: 11px; color: #1e40af;">Envoyés</span>
+                    <strong style="font-size: 18px; color: #1e40af;">{{ quotes_sent }}</strong>
+                </div>
+                <div style="padding: 10px; background: #f0fdf4; border-radius: 6px;">
+                    <span style="display: block; font-size: 11px; color: #15803d;">Acceptés</span>
+                    <strong style="font-size: 18px; color: #15803d;">{{ quotes_accepted }}</strong>
+                </div>
+                <div style="padding: 10px; background: #fef2f2; border-radius: 6px;">
+                    <span style="display: block; font-size: 11px; color: #991b1b;">Refusés</span>
+                    <strong style="font-size: 18px; color: #991b1b;">{{ quotes_rejected }}</strong>
+                </div>
+            </div>
+        </section>
+
+        <!-- Dernières Factures -->
+        <section class="panel table-panel">
+            <div class="section-heading">
+                <div><p class="eyebrow">FACTURATION</p><h2>Dernières factures</h2></div>
+                <a class="button quiet" href="{% url 'invoice-list' %}">Toutes →</a>
+            </div>
+            {% if recent_invoices %}
+                <div class="table-scroll">
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>Numéro</th><th>Client</th><th>Statut</th><th class="numeric">Total TTC</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for inv in recent_invoices %}
+                                <tr>
+                                    <td><a class="table-link" href="{% url 'invoice-detail' inv.pk %}">{{ inv.number }}</a></td>
+                                    <td>{{ inv.customer_snapshot.name|default:inv.customer.name }}</td>
+                                    <td><span class="status status-{{ inv.status }}">{{ inv.get_status_display }}</span></td>
+                                    <td class="numeric">{{ inv.total_ttc|money }} MAD</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="empty-inline">Aucune facture émise pour le moment.</p>
+            {% endif %}
+        </section>
+    </div>
+
+    <!-- Colonne Règlements & Dépenses -->
+    <div style="display: flex; flex-direction: column; gap: 16px;">
+        <!-- Derniers Règlements Clients -->
+        <section class="panel table-panel">
+            <div class="section-heading">
+                <div><p class="eyebrow">ENCAISSEMENTS</p><h2>Derniers règlements clients</h2></div>
+                {% if perms.finance.view_payment %}
+                    <a class="button quiet" href="{% url 'payment-list' %}">Tous →</a>
+                {% endif %}
+            </div>
+            {% if recent_payments %}
+                <div class="table-scroll">
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>Date</th><th>Client</th><th>Mode</th><th class="numeric">Montant</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for p in recent_payments %}
+                                <tr>
+                                    <td>{{ p.payment_date|date:"d/m/Y" }}</td>
+                                    <td>{{ p.customer.name }}</td>
+                                    <td>{{ p.get_method_display }}</td>
+                                    <td class="numeric"><strong style="color: #15803d;">{{ p.amount|money }} MAD</strong></td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="empty-inline">Aucun règlement client enregistré.</p>
+            {% endif %}
+        </section>
+
+        <!-- Dernières Dépenses -->
+        <section class="panel table-panel">
+            <div class="section-heading">
+                <div><p class="eyebrow">DÉPENSES</p><h2>Dernières dépenses</h2></div>
+                {% if perms.finance.view_expense %}
+                    <a class="button quiet" href="{% url 'expense-list' %}">Toutes →</a>
+                {% endif %}
+            </div>
+            {% if recent_expenses %}
+                <div class="table-scroll">
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>Date</th><th>Description</th><th>Statut</th><th class="numeric">Montant</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for exp in recent_expenses %}
+                                <tr>
+                                    <td>{{ exp.expense_date|date:"d/m/Y" }}</td>
+                                    <td>
+                                        {% if perms.finance.view_expense %}
+                                            <a class="table-link" href="{% url 'expense-detail' exp.pk %}">{{ exp.description }}</a>
+                                        {% else %}
+                                            {{ exp.description }}
+                                        {% endif %}
+                                    </td>
+                                    <td><span class="status status-{{ exp.payment_status|lower|cut:' ' }}">{{ exp.payment_status }}</span></td>
+                                    <td class="numeric">{{ exp.amount|money }} MAD</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="empty-inline">Aucune dépense enregistrée.</p>
+            {% endif %}
+        </section>
+    </div>
+</div>
+{% endblock %}
+

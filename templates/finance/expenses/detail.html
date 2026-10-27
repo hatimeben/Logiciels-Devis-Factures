@@ -1,0 +1,120 @@
+{% extends "finance/quotes/base.html" %}
+{% load finance_quotes %}
+{% block title %}{{ expense.description }}{% endblock %}
+{% block content %}
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">DÉPENSE · {{ expense.payment_status|upper }}</p>
+        <h1>{{ expense.description }}</h1>
+        <p class="subheading">Catégorie : {{ expense.category.name }}{% if expense.supplier %} · Fournisseur : {{ expense.supplier.name }}{% endif %}</p>
+    </div>
+    <div class="heading-actions">
+        <a class="button quiet" href="{% url 'expense-list' %}">← Liste</a>
+        {% if can_change and expense.amount_paid == 0 %}
+            <a class="button secondary" href="{% url 'expense-edit' expense.pk %}">Modifier</a>
+        {% endif %}
+        {% if can_add_payment %}
+            <a class="button primary" href="{% url 'expense-payment' expense.pk %}">＋ Régler la dépense</a>
+        {% endif %}
+    </div>
+</div>
+
+<section class="summary-grid">
+    <article class="panel summary-card">
+        <span>Montant de la dépense</span>
+        <strong>{{ expense.amount|money }} MAD</strong>
+        <small>Date : {{ expense.expense_date|date:"d/m/Y" }}</small>
+    </article>
+    <article class="panel summary-card">
+        <span>Montant payé</span>
+        <strong><span style="color: #15803d;">{{ expense.amount_paid|money }} MAD</span></strong>
+        <small>{{ payments.count }} paiement(s) fournisseur</small>
+    </article>
+    <article class="panel summary-card">
+        <span>Solde restant dû</span>
+        <strong>
+            {% if expense.remaining_balance > 0 %}
+                <span style="color: #b91c1c;">{{ expense.remaining_balance|money }} MAD</span>
+            {% else %}
+                <span style="color: #15803d;">0,00 MAD</span>
+            {% endif %}
+        </strong>
+        <small>Statut : {{ expense.payment_status }}</small>
+    </article>
+    <article class="panel summary-card">
+        <span>Justificatif & Projet</span>
+        <strong>
+            {% if expense.receipt %}
+                <a href="{% url 'expense-receipt' expense.pk %}" target="_blank">📄 Voir la pièce jointe</a>
+            {% else %}
+                <span style="color: #64748b;">Aucun justificatif</span>
+            {% endif %}
+        </strong>
+        <small>{% if expense.project %}Projet : {{ expense.project.name }}{% else %}Aucun projet associé{% endif %}</small>
+    </article>
+</section>
+
+<!-- Règlements fournisseurs -->
+<section class="panel table-panel">
+    <div class="section-heading">
+        <div><p class="eyebrow">PAIEMENTS</p><h2>Historique des règlements fournisseur</h2></div>
+        {% if can_add_payment %}
+            <a class="button secondary" href="{% url 'expense-payment' expense.pk %}">＋ Ajouter un règlement</a>
+        {% endif %}
+    </div>
+    {% if payments %}
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Date du paiement</th>
+                        <th>Mode</th>
+                        <th>Référence</th>
+                        <th>Notes</th>
+                        <th class="numeric">Montant réglé</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in payments %}
+                        <tr>
+                            <td>{{ p.payment_date|date:"d/m/Y" }}</td>
+                            <td>{{ p.get_method_display }}</td>
+                            <td>{{ p.reference|default:"—" }}</td>
+                            <td>{{ p.notes|default:"—" }}</td>
+                            <td class="numeric"><strong>{{ p.amount|money }} MAD</strong></td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="detail-totals">
+            <div><span>Montant total dépense</span><strong>{{ expense.amount|money }} MAD</strong></div>
+            <div><span>Total payé</span><strong>{{ expense.amount_paid|money }} MAD</strong></div>
+            <div class="grand-total"><span>Reste à payer</span><strong>{{ expense.remaining_balance|money }} MAD</strong></div>
+        </div>
+    {% else %}
+        <p class="empty-inline">Aucun règlement n'a encore été enregistré pour cette dépense.</p>
+    {% endif %}
+</section>
+
+<!-- Traçabilité / Historique -->
+<section class="panel form-panel">
+    <div class="section-heading"><div><p class="eyebrow">TRAÇABILITÉ</p><h2>Historique des modifications</h2></div></div>
+    {% if history %}
+        <ul class="history-list">
+            {% for entry in history %}
+                <li>
+                    <span class="history-dot"></span>
+                    <div>
+                        <strong>{{ entry.get_event_display }}</strong>
+                        <small>{{ entry.created_at|date:"d/m/Y H:i" }} · {{ entry.snapshot.actor_username|default:entry.actor.username|default:"Utilisateur supprimé" }}</small>
+                    </div>
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p class="empty-inline">Aucun événement enregistré.</p>
+    {% endif %}
+</section>
+{% endblock %}
+

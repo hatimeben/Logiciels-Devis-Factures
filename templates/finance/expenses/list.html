@@ -1,0 +1,119 @@
+{% extends "finance/quotes/base.html" %}
+{% load finance_quotes %}
+{% block title %}Dépenses{% endblock %}
+{% block content %}
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">ACHATS · CHARGES</p>
+        <h1>Dépenses</h1>
+        <p class="subheading">Suivez et gérez les achats, frais généraux et règlements fournisseurs.</p>
+    </div>
+    {% if perms.finance.add_expense %}
+        <a class="button primary" href="{% url 'expense-create' %}">＋ Nouvelle dépense</a>
+    {% endif %}
+</div>
+
+<section class="panel filter-panel">
+    <form method="get" class="filters">
+        <label class="search-field">
+            <span>Recherche</span>
+            <input type="search" name="q" value="{{ filters.q }}" placeholder="Description, fournisseur ou catégorie">
+        </label>
+        <label>
+            <span>Catégorie</span>
+            <select name="category">
+                <option value="">Toutes les catégories</option>
+                {% for cat in categories %}
+                    <option value="{{ cat.pk }}" {% if filters.category == cat.pk|stringformat:"s" %}selected{% endif %}>{{ cat.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            <span>Fournisseur</span>
+            <select name="supplier">
+                <option value="">Tous les fournisseurs</option>
+                {% for sup in suppliers %}
+                    <option value="{{ sup.pk }}" {% if filters.supplier == sup.pk|stringformat:"s" %}selected{% endif %}>{{ sup.name }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            <span>Statut</span>
+            <select name="status">
+                <option value="">Tous les statuts</option>
+                {% for val, label in statuses %}
+                    <option value="{{ val }}" {% if filters.status == val %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>
+            <span>Du</span>
+            <input type="date" name="date_from" value="{{ filters.date_from }}">
+        </label>
+        <label>
+            <span>Au</span>
+            <input type="date" name="date_to" value="{{ filters.date_to }}">
+        </label>
+        <button class="button secondary" type="submit">Filtrer</button>
+        <a class="button quiet" href="{% url 'expense-list' %}">Effacer</a>
+    </form>
+</section>
+
+<section class="panel table-panel">
+    {% if page.object_list %}
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Description</th>
+                        <th>Catégorie</th>
+                        <th>Fournisseur</th>
+                        <th>Statut</th>
+                        <th class="numeric">Montant</th>
+                        <th class="numeric">Payé</th>
+                        <th class="numeric">Reste dû</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for expense in page %}
+                        <tr>
+                            <td>{{ expense.expense_date|date:"d/m/Y" }}</td>
+                            <td><a class="table-link" href="{% url 'expense-detail' expense.pk %}"><strong>{{ expense.description }}</strong></a></td>
+                            <td>{{ expense.category.name }}</td>
+                            <td>{{ expense.supplier.name|default:"—" }}</td>
+                            <td><span class="status status-{{ expense.payment_status|lower|cut:' ' }}">{{ expense.payment_status }}</span></td>
+                            <td class="numeric">{{ expense.amount|money }} MAD</td>
+                            <td class="numeric">{{ expense.amount_paid|money }} MAD</td>
+                            <td class="numeric">
+                                {% if expense.remaining_balance > 0 %}
+                                    <strong style="color: #b91c1c;">{{ expense.remaining_balance|money }} MAD</strong>
+                                {% else %}
+                                    <span style="color: #15803d;">0,00 MAD</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if page.has_other_pages %}
+            <div class="pagination">
+                {% if page.has_previous %}<a href="?{{ filters.urlencode }}&page={{ page.previous_page_number }}">← Précédent</a>{% endif %}
+                <span>Page {{ page.number }} sur {{ page.paginator.num_pages }}</span>
+                {% if page.has_next %}<a href="?{{ filters.urlencode }}&page={{ page.next_page_number }}">Suivant →</a>{% endif %}
+            </div>
+        {% endif %}
+    {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">💸</div>
+            <h2>Aucune dépense enregistrée</h2>
+            <p>Ajoutez vos factures d'achat, notes de frais et charges d'exploitation.</p>
+            {% if perms.finance.add_expense %}
+                <a class="button primary" href="{% url 'expense-create' %}">Créer une dépense</a>
+            {% endif %}
+        </div>
+    {% endif %}
+</section>
+{% endblock %}
+
