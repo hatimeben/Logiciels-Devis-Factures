@@ -57,7 +57,22 @@
                         <tr>
                             <td>{{ payment.payment_date|date:"d/m/Y" }}</td>
                             <td>{{ payment.customer.name }}</td>
-                            <td>{{ payment.get_method_display }}</td>
+                            <td>
+                                {% if payment.method == "bank_transfer" %}
+                                    <span class="pay-method-badge pay-transfer">🏦 Virement</span>
+                                {% elif payment.method == "cheque" %}
+                                    <span class="pay-method-badge pay-cheque">📜 Chèque</span>
+                                {% elif payment.method == "bill_of_exchange" %}
+                                    <span class="pay-method-badge pay-effet">📑 Effet</span>
+                                {% elif payment.method == "cash" %}
+                                    <span class="pay-method-badge pay-cash">💵 Espèces</span>
+                                {% else %}
+                                    <span class="pay-method-badge pay-other">{{ payment.get_method_display }}</span>
+                                {% endif %}
+                                {% if payment.is_cash_over_ceiling %}
+                                    <span class="tag-cash-warning" title="Article 11-II CGI : Excédent {{ payment.cash_excess_amount|money }} MAD">⚠️ &gt; 5k</span>
+                                {% endif %}
+                            </td>
                             <td>{{ payment.reference|default:"—" }}</td>
                             <td>
                                 {% for alloc in payment.allocations.all %}
@@ -66,7 +81,12 @@
                                     <span style="color: var(--muted, #64748b);">Non affecté</span>
                                 {% endfor %}
                             </td>
-                            <td class="numeric"><strong>{{ payment.amount|money }} MAD</strong></td>
+                            <td class="numeric">
+                                <strong>{{ payment.amount|money }} MAD</strong>
+                                {% if payment.is_cash_over_ceiling %}
+                                    <div style="font-size: 11px; color: #b45309; font-weight: 600;">Excédent CGI : +{{ payment.cash_excess_amount|money }} MAD</div>
+                                {% endif %}
+                            </td>
                         </tr>
                     {% endfor %}
                 </tbody>

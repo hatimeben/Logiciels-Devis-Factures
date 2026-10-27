@@ -172,11 +172,11 @@ def export_payments_csv(request):
 
     headers = [
         "Date Règlement", "N° Reçu", "Mode de Règlement", "Référence",
-        "N° Facture", "Client", "Montant Encaissé (MAD)", "Remarques"
+        "N° Facture", "Client", "Montant Encaissé (MAD)", "Alerte Fiscale CGI (Art. 11-II)", "Remarques"
     ]
     key_order = [
         "date", "payment_id", "method_display", "reference",
-        "invoice_number", "customer_name", "amount", "notes"
+        "invoice_number", "customer_name", "amount", "fiscal_alert", "notes"
     ]
     csv_bytes = build_csv_export(headers, payments_data["entries"], key_order)
     safe_label = period_label.replace(" ", "_")

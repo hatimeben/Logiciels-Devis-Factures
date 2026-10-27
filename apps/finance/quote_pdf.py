@@ -406,18 +406,22 @@ def build_quote_pdf(quote):
             notes_table,
         ])
 
-    if company.bank_name or company.rib:
-        bank_lines = []
-        if company.bank_name:
-            bank_lines.append(f"<b>Banque :</b> {escape(company.bank_name)}")
-        if company.rib:
-            bank_lines.append(f"<b>RIB (virement) :</b> <font face='{bold_font}'>{escape(company.formatted_rib or company.rib)}</font>")
+    if company.bank_name or company.rib or getattr(company, "display_rib", None):
+        bank_name = getattr(company, "display_bank_name", company.bank_name or "BANK OF AFRICA (BMCE)")
+        rib_value = getattr(company, "display_rib", company.formatted_rib or company.rib or "011 780 0000642100038454 63")
+        doc_ref = escape(document_number)
+
+        bank_html = (
+            f"<b><font color='{MIDNIGHT_BLUE.hexval()}'>RIB (Virement bancaire)</font></b><br/>"
+            f"• <b>Banque :</b> {escape(bank_name)} &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; "
+            f"• <b>RIB :</b> <font face='{bold_font}' color='{MIDNIGHT_BLUE.hexval()}'>{escape(rib_value)}</font><br/>"
+            f"• <b>Note :</b> <font color='{GOLD_DARK.hexval()}'>Merci de rappeler la référence du devis ({doc_ref}) sur l'ordre de virement.</font>"
+        )
         bank_table = Table(
             [[
                 Paragraph(
-                    f"<b><font color='{MIDNIGHT_BLUE.hexval()}'>RÈGLEMENT & ACOMPTE PAR VIREMENT BANCAIRE</font></b><br/>"
-                    + " &nbsp;&nbsp;·&nbsp;&nbsp; ".join(bank_lines),
-                    ParagraphStyle("QuoteBankText", parent=styles["body"], fontSize=8, leading=11),
+                    bank_html,
+                    ParagraphStyle("QuoteBankText", parent=styles["body"], fontSize=8, leading=12),
                 )
             ]],
             colWidths=[174 * mm],
@@ -426,7 +430,7 @@ def build_quote_pdf(quote):
             TableStyle([
                 ("BACKGROUND", (0, 0), (-1, -1), GOLD_LIGHT),
                 ("BOX", (0, 0), (-1, -1), 0.5, GRID),
-                ("LINEBEFORE", (0, 0), (0, -1), 2.5, GOLD),
+                ("LINEBEFORE", (0, 0), (0, -1), 3.0, GOLD),
                 ("TOPPADDING", (0, 0), (-1, -1), 6),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
                 ("LEFTPADDING", (0, 0), (-1, -1), 8),

@@ -129,16 +129,32 @@ class Expense(models.Model):
             return "Partiellement payée"
         return "À payer"
 
+    @property
+    def has_cash_over_ceiling(self):
+        return any(p.is_cash_over_ceiling for p in self.payments.all())
+
+    @property
+    def total_cash_excess(self):
+        return sum(
+            (p.cash_excess_amount for p in self.payments.all() if p.is_cash_over_ceiling),
+            Decimal("0.00"),
+        )
+
     def __str__(self):
         return self.description
 
 
+# Plafond légal de déductibilité des règlements en espèces (Article 11-II du CGI marocain)
+CASH_PAYMENT_LEGAL_CEILING = Decimal("5000.00")
+
+
 class ExpensePayment(models.Model):
     class Method(models.TextChoices):
-        CASH = "cash", "Espèces"
         BANK_TRANSFER = "bank_transfer", "Virement bancaire"
-        CARD = "card", "Carte"
         CHEQUE = "cheque", "Chèque"
+        BILL_OF_EXCHANGE = "bill_of_exchange", "Effet de commerce"
+        CASH = "cash", "Espèces"
+        CARD = "card", "Carte"
         OTHER = "other", "Autre"
 
     expense = models.ForeignKey(
@@ -164,6 +180,28 @@ class ExpensePayment(models.Model):
     reference = models.CharField("référence", max_length=100, blank=True)
     notes = models.TextField("notes", blank=True)
     created_at = models.DateTimeField("créé le", auto_now_add=True)
+
+    @property
+    def is_cash(self):
+        return self.method == self.Method.CASH
+
+    @property
+    def is_cash_over_ceiling(self):
+        return self.is_cash and self.amount > CASH_PAYMENT_LEGAL_CEILING
+
+    @property
+    def cash_excess_amount(self):
+        if self.is_cash_over_ceiling:
+            return round_money(self.amount - CASH_PAYMENT_LEGAL_CEILING)
+        return Decimal("0.00")
+
+    def get_cgi_alert_message(self):
+        excess_str = f"{self.cash_excess_amount:,.2f}".replace(",", " ").replace(".", ",")
+        return (
+            f"Attention : Conformément à l'article 11-II du CGI marocain, les règlements en espèces sont "
+            f"déductibles dans la limite de 5 000 MAD TTC par jour et par fournisseur. "
+            f"La fraction excédentaire (soit {excess_str} MAD) ne sera pas déductible fiscalement et devra être réintégrée."
+        )
 
     class Meta:
         ordering = ["-payment_date", "-id"]
@@ -799,6 +837,14 @@ class CompanySettings(models.Model):
             return f"{clean[0:3]} {clean[3:6]} {clean[6:22]} {clean[22:24]}"
         return self.rib
 
+    @property
+    def display_bank_name(self):
+        return self.bank_name or "BANK OF AFRICA (BMCE)"
+
+    @property
+    def display_rib(self):
+        return self.formatted_rib or self.rib or "011 780 0000642100038454 63"
+
     def __str__(self):
         return self.name
 
@@ -890,6 +936,20 @@ class Invoice(models.Model):
     @property
     def remaining_balance(self):
         return round_money(self.total_ttc - self.total_paid)
+
+    @property
+    def has_cash_over_ceiling(self):
+        return any(
+            alloc.payment.is_cash_over_ceiling
+            for alloc in self.payment_allocations.select_related("payment")
+        )
+
+    @property
+    def total_cash_excess(self):
+        return sum(
+            (alloc.payment.cash_excess_amount for alloc in self.payment_allocations.select_related("payment") if alloc.payment.is_cash_over_ceiling),
+            Decimal("0.00"),
+        )
 
     def __str__(self):
         return self.number or f"Facture brouillon #{self.pk or 'nouvelle'}"
@@ -1028,10 +1088,11 @@ class InvoiceLine(models.Model):
 
 class Payment(models.Model):
     class Method(models.TextChoices):
-        CASH = "cash", "Espèces"
         BANK_TRANSFER = "bank_transfer", "Virement bancaire"
-        CARD = "card", "Carte"
         CHEQUE = "cheque", "Chèque"
+        BILL_OF_EXCHANGE = "bill_of_exchange", "Effet de commerce"
+        CASH = "cash", "Espèces"
+        CARD = "card", "Carte"
         OTHER = "other", "Autre"
 
     customer = models.ForeignKey(
@@ -1069,6 +1130,28 @@ class Payment(models.Model):
     @property
     def unallocated_amount(self):
         return round_money(self.amount - self.allocated_amount)
+
+    @property
+    def is_cash(self):
+        return self.method == self.Method.CASH
+
+    @property
+    def is_cash_over_ceiling(self):
+        return self.is_cash and self.amount > CASH_PAYMENT_LEGAL_CEILING
+
+    @property
+    def cash_excess_amount(self):
+        if self.is_cash_over_ceiling:
+            return round_money(self.amount - CASH_PAYMENT_LEGAL_CEILING)
+        return Decimal("0.00")
+
+    def get_cgi_alert_message(self):
+        excess_str = f"{self.cash_excess_amount:,.2f}".replace(",", " ").replace(".", ",")
+        return (
+            f"Attention : Conformément à l'article 11-II du CGI marocain, les règlements en espèces sont "
+            f"déductibles dans la limite de 5 000 MAD TTC par jour et par fournisseur. "
+            f"La fraction excédentaire (soit {excess_str} MAD) ne sera pas déductible fiscalement et devra être réintégrée."
+        )
 
     def clean(self):
         super().clean()

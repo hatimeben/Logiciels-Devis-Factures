@@ -303,6 +303,11 @@ def invoice_payment(request, invoice_id):
                 request,
                 f"Règlement de {allocation.amount} MAD enregistré sur la facture {invoice.number}."
             )
+            if payment.is_cash_over_ceiling:
+                messages.warning(
+                    request,
+                    payment.get_cgi_alert_message()
+                )
             return redirect("invoice-detail", invoice_id=invoice.pk)
 
     return render(

@@ -413,37 +413,60 @@ input:focus, select:focus, textarea:focus {
 .login-admin-link { align-self: center; margin-top: 24px; color: #71809a; font-size: 12px; }
 .login-admin-link:hover { color: var(--blue); }
 
-/* Encadré Coordonnées Bancaires & RIB */
+/* Encadré Coordonnées Bancaires & RIB (Bleu Nuit #1B2A4A & Or #D4AF37) */
 .bank-card-section {
-    background: #FAF5E8 !important;
+    background: #FAF8F2 !important;
     border: 1px solid #E5D5A8 !important;
-    border-left: 4px solid #C59B27 !important;
+    border-left: 4px solid #D4AF37 !important;
     border-radius: 14px;
-    padding: 16px 22px;
-    margin-bottom: 22px;
+    padding: 18px 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 2px 8px rgba(27, 42, 74, 0.04);
 }
 .bank-card-content {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 18px;
 }
 .bank-card-icon {
-    font-size: 30px;
+    font-size: 32px;
     line-height: 1;
     display: flex;
     align-items: center;
     justify-content: center;
+    padding-top: 2px;
 }
 .bank-card-info {
     flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.bank-card-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.bank-title-badge {
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #1B2A4A;
+    background: #F1E5C6;
+    padding: 3px 10px;
+    border-radius: 6px;
+    border: 1px solid #D4AF37;
 }
 .bank-card-row {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 16px;
+    gap: 20px;
     font-size: 13.5px;
-    color: #0F172A;
+    color: #1B2A4A;
 }
 .bank-item {
     display: inline-flex;
@@ -454,27 +477,42 @@ input:focus, select:focus, textarea:focus {
     background: #FFFFFF;
     padding: 4px 10px;
     border-radius: 6px;
-    border: 1px solid #D5C391;
+    border: 1.5px solid #D4AF37;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-weight: 700;
-    font-size: 13px;
-    color: #0F172A;
+    font-size: 13.5px;
+    color: #1B2A4A;
     letter-spacing: 0.5px;
 }
 .copy-rib-btn {
-    padding: 4px 12px !important;
+    padding: 5px 12px !important;
     font-size: 12px !important;
     font-weight: 600 !important;
     border-radius: 6px !important;
     background: #FFFFFF !important;
-    border: 1px solid #C59B27 !important;
-    color: #9A7516 !important;
+    border: 1px solid #D4AF37 !important;
+    color: #1B2A4A !important;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all 0.2s ease;
 }
 .copy-rib-btn:hover {
-    background: #C59B27 !important;
+    background: #D4AF37 !important;
     color: #FFFFFF !important;
+    border-color: #D4AF37 !important;
+}
+.bank-card-note {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: rgba(212, 175, 55, 0.12);
+    border-radius: 8px;
+    border-left: 3px solid #D4AF37;
+    font-size: 13px;
+    color: #1B2A4A;
+}
+.bank-note-icon {
+    font-size: 14px;
 }
 
 @media (max-width: 900px) {
@@ -528,4 +566,152 @@ input:focus, select:focus, textarea:focus {
     .login-form-panel { padding: 30px 24px; }
     .login-icon { margin-bottom: 19px; }
     .login-form-heading { margin-bottom: 23px; }
+}
+
+/* ==========================================================================
+   Alerte « Sage » & Traçabilité des Règlements (Article 11-II CGI Maroc)
+   ========================================================================== */
+
+/* Boîte d'alerte interactive non bloquante "Sage" */
+.sage-alert-box {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    background: #FFFBEB;
+    border: 1px solid #FCD34D;
+    border-left: 5px solid #F59E0B;
+    border-radius: 12px;
+    padding: 16px 20px;
+    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.08);
+    animation: sageFadeIn 0.25s ease-out;
+}
+
+@keyframes sageFadeIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.sage-alert-icon {
+    font-size: 26px;
+    line-height: 1;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.sage-alert-body {
+    flex: 1;
+}
+
+.sage-alert-title {
+    margin: 0 0 6px 0;
+    font-size: 13.5px;
+    font-weight: 800;
+    color: #92400E;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.sage-alert-text {
+    margin: 0 0 8px 0;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: #78350F;
+}
+
+.sage-excess-value {
+    color: #B45309;
+    font-weight: 800;
+    background: #FEF3C7;
+    padding: 1px 6px;
+    border-radius: 4px;
+    border: 1px solid #FDE68A;
+}
+
+.sage-alert-footer {
+    font-size: 12px;
+    color: #92400E;
+    padding-top: 6px;
+    border-top: 1px dashed #FDE68A;
+}
+
+/* Pilule d'avertissement fiscal sur la facture */
+.fiscal-alert-pill {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #FFF7ED;
+    border: 1px solid #FED7AA;
+    border-left: 4px solid #EA580C;
+    border-radius: 10px;
+    padding: 12px 18px;
+    font-size: 13px;
+    color: #9A3412;
+}
+
+.fiscal-pill-icon {
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+.fiscal-pill-body strong {
+    color: #7C2D12;
+}
+
+/* Badges catégorisés pour les modes de paiement */
+.pay-method-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+}
+
+.pay-transfer {
+    background: #EFF6FF;
+    color: #1E40AF;
+    border: 1px solid #BFDBFE;
+}
+
+.pay-cheque {
+    background: #FAF5FF;
+    color: #6B21A8;
+    border: 1px solid #E9D5FF;
+}
+
+.pay-effet {
+    background: #FFFBEB;
+    color: #92400E;
+    border: 1px solid #FDE68A;
+}
+
+.pay-cash {
+    background: #ECFDF5;
+    color: #065F46;
+    border: 1px solid #A7F3D0;
+}
+
+.pay-other {
+    background: #F1F5F9;
+    color: #334155;
+    border: 1px solid #CBD5E1;
+}
+
+/* Tag avertissement espèces > 5k */
+.tag-cash-warning {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px;
+    border-radius: 6px;
+    background: #FEF3C7;
+    color: #92400E;
+    border: 1px solid #F59E0B;
+    font-size: 11px;
+    font-weight: 700;
+    margin-left: 6px;
+    vertical-align: middle;
 }

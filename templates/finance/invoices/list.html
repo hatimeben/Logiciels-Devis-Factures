@@ -35,7 +35,12 @@
                             <td>{% if invoice.quote %}<a href="{% url 'quote-detail' invoice.quote.pk %}">{{ invoice.quote.number }}</a>{% else %}—{% endif %}</td>
                             <td>{{ invoice.issue_date|date:"d/m/Y"|default:"—" }}</td>
                             <td>{{ invoice.due_date|date:"d/m/Y"|default:"—" }}</td>
-                            <td><span class="status status-{{ invoice.status }}">{{ invoice.get_status_display }}</span></td>
+                            <td>
+                                <span class="status status-{{ invoice.status }}">{{ invoice.get_status_display }}</span>
+                                {% if invoice.has_cash_over_ceiling %}
+                                    <span class="tag-cash-warning" title="Article 11-II CGI : Espèces > 5 000 MAD (Excédent {{ invoice.total_cash_excess|money }} MAD)">⚠️ &gt; 5k</span>
+                                {% endif %}
+                            </td>
                             <td class="numeric">{{ invoice|quote_total:"total"|money }} MAD</td>
                         </tr>
                     {% endfor %}

@@ -370,22 +370,49 @@ def get_payments_journal_data(start_date, end_date):
         doc_num = inv.number or f"FAC-{inv.pk}"
         amount = alloc.amount
 
+        # Compte de trésorerie PCGM selon le mode de paiement
+        if p.method == Payment.Method.BANK_TRANSFER:
+            account_code = "51410000"
+            account_name = "Banque"
+        elif p.method == Payment.Method.CHEQUE:
+            account_code = "51111000"
+            account_name = "Chèques à encaisser"
+        elif p.method == Payment.Method.BILL_OF_EXCHANGE:
+            account_code = "51130000"
+            account_name = "Effets à encaisser"
+        elif p.method == Payment.Method.CASH:
+            account_code = "51610000"
+            account_name = "Caisse Centrale"
+        else:
+            account_code = "51610000"
+            account_name = "Caisse / Règlements"
+
+        is_cash_over = p.is_cash_over_ceiling
+        cash_excess = p.cash_excess_amount
+        fiscal_alert = (
+            f"⚠️ Plafond CGI dépassé (>5k) : réint. {cash_excess} MAD"
+            if is_cash_over else "Conforme"
+        )
+
         entries.append({
             "date": p.payment_date,
             "payment_id": p.pk,
+            "method": p.method,
             "method_display": p.get_method_display(),
             "reference": p.reference or "—",
             "invoice_number": doc_num,
             "customer_name": cust_name,
             "amount": amount,
             "notes": p.notes or "",
+            "is_cash_over_ceiling": is_cash_over,
+            "cash_excess_amount": cash_excess,
+            "fiscal_alert": fiscal_alert,
         })
 
         total_amount += amount
 
-        # Compte de trésorerie selon le mode
-        account_code = "51410000" if p.method == Payment.Method.BANK_TRANSFER else "51610000"
-        account_name = "Banque" if p.method == Payment.Method.BANK_TRANSFER else "Caisse / Règlements"
+        # Libellé avec tag d'alerte si dépassement espèces
+        alert_tag = " [⚠️ PLAFOND CGI >5K]" if is_cash_over else ""
 
         # Écriture Débit Trésorerie
         accounting_entries.append({
@@ -394,7 +421,7 @@ def get_payments_journal_data(start_date, end_date):
             "piece": f"REG-{p.pk}",
             "account": account_code,
             "account_label": account_name,
-            "libelle": f"Règlt {p.get_method_display()} {doc_num} - {cust_name}",
+            "libelle": f"Règlt {p.get_method_display()} {doc_num} - {cust_name}{alert_tag}",
             "debit": amount,
             "credit": Decimal("0.00"),
         })
@@ -405,7 +432,7 @@ def get_payments_journal_data(start_date, end_date):
             "piece": f"REG-{p.pk}",
             "account": "34210000",
             "account_label": f"Clients - {cust_name}",
-            "libelle": f"Règlt {doc_num}",
+            "libelle": f"Règlt {doc_num}{alert_tag}",
             "debit": Decimal("0.00"),
             "credit": amount,
         })
@@ -446,6 +473,8 @@ def build_complete_fiduciary_pack_xlsx(period_label, vat_data, sales_data, payme
     fill_subtotal = PatternFill(start_color="FAF5E8", end_color="FAF5E8", fill_type="solid")
     fill_zebra = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
     fill_kpi = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
+    fill_warning = PatternFill(start_color="FFF3CD", end_color="FFF3CD", fill_type="solid")
+    font_warning = Font(name="Calibri", size=10, bold=True, color="92400E")
 
     thin_border = Side(style="thin", color="E2E8F0")
     gold_top = Side(style="medium", color="C59B27")
@@ -672,7 +701,10 @@ def build_complete_fiduciary_pack_xlsx(period_label, vat_data, sales_data, payme
     ws_tr["A2"] = f"Période : {period_label} | {len(payments_data['entries'])} encaissements"
     ws_tr["A2"].font = font_company
 
-    tr_headers = ["Date Règlement", "N° Quittance", "Mode de Règlement", "Référence / N° Chèque", "Facture Concernée", "Client", "Montant Encaissé (MAD)", "Remarques"]
+    tr_headers = [
+        "Date Règlement", "N° Quittance", "Mode de Règlement", "Référence / N° Chèque",
+        "Facture Concernée", "Client", "Montant Encaissé (MAD)", "Alerte Fiscale CGI (Art. 11-II)", "Remarques"
+    ]
     for col_idx, h in enumerate(tr_headers, start=1):
         c = ws_tr.cell(row=4, column=col_idx, value=h)
         c.font = font_header
@@ -689,19 +721,27 @@ def build_complete_fiduciary_pack_xlsx(period_label, vat_data, sales_data, payme
         ws_tr.cell(row=row_idx, column=5, value=p["invoice_number"]).alignment = Alignment(horizontal="center")
         ws_tr.cell(row=row_idx, column=6, value=p["customer_name"]).alignment = Alignment(horizontal="left")
         ws_tr.cell(row=row_idx, column=7, value=float(p["amount"])).number_format = money_fmt
-        ws_tr.cell(row=row_idx, column=8, value=p["notes"]).alignment = Alignment(horizontal="left")
+        
+        c_alert = ws_tr.cell(row=row_idx, column=8, value=p["fiscal_alert"])
+        c_alert.alignment = Alignment(horizontal="left")
+        if p.get("is_cash_over_ceiling"):
+            c_alert.fill = fill_warning
+            c_alert.font = font_warning
+            
+        ws_tr.cell(row=row_idx, column=9, value=p["notes"]).alignment = Alignment(horizontal="left")
 
-        for ci in range(1, 9):
+        for ci in range(1, 10):
             c = ws_tr.cell(row=row_idx, column=ci)
-            c.font = font_data
             c.border = cell_border
-            if row_idx % 2 == 0:
-                c.fill = fill_zebra
+            if ci != 8 or not p.get("is_cash_over_ceiling"):
+                c.font = font_data
+                if row_idx % 2 == 0:
+                    c.fill = fill_zebra
         row_idx += 1
 
     ws_tr.cell(row=row_idx, column=6, value="TOTAL ENCAISSEMENTS").font = font_bold
     ws_tr.cell(row=row_idx, column=7, value=float(payments_data["totals"]["amount"])).number_format = money_fmt
-    for ci in range(1, 9):
+    for ci in range(1, 10):
         c = ws_tr.cell(row=row_idx, column=ci)
         c.font = font_bold
         c.fill = fill_subtotal

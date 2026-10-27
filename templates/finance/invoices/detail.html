@@ -4,7 +4,7 @@
 {% block content %}
 <div class="page-heading">
     <div>
-        <p class="eyebrow">FACTURE · {{ invoice.get_status_display|upper }}</p>
+        <p class="eyebrow">FACTURE · {{ invoice.get_status_display|upper }}{% if invoice.has_cash_over_ceiling %} · <span style="color: #d97706; font-weight: 700;">⚠️ ALERTE ESPÈCES CGI</span>{% endif %}</p>
         <h1>{{ invoice.number|default:"Facture brouillon" }}</h1>
         <p class="subheading">{{ customer_snapshot.name }}{% if invoice.quote %} · Issue du devis <a href="{% url 'quote-detail' invoice.quote.pk %}">{{ invoice.quote.number }}</a>{% endif %}</p>
     </div>
@@ -116,6 +116,18 @@
             <a class="button secondary" href="{% url 'invoice-payment' invoice.pk %}">＋ Ajouter un règlement</a>
         {% endif %}
     </div>
+
+    {% if invoice.has_cash_over_ceiling %}
+        <div class="fiscal-alert-pill" role="alert" style="margin: 0 0 16px 0;">
+            <span class="fiscal-pill-icon">⚠️</span>
+            <div class="fiscal-pill-body">
+                <strong>Traçabilité Fiscale CGI (Article 11-II) :</strong>
+                Un ou plusieurs règlements en espèces sur cette facture dépassent le plafond légal de 5 000 MAD TTC. 
+                Fraction excédentaire totale à réintégrer fiscalement (IS) : <strong>{{ invoice.total_cash_excess|money }} MAD</strong>.
+            </div>
+        </div>
+    {% endif %}
+
     {% if allocations %}
         <div class="table-scroll">
             <table class="data-table">
@@ -132,10 +144,30 @@
                     {% for alloc in allocations %}
                         <tr>
                             <td>{{ alloc.payment.payment_date|date:"d/m/Y" }}</td>
-                            <td>{{ alloc.payment.get_method_display }}</td>
+                            <td>
+                                {% if alloc.payment.method == "bank_transfer" %}
+                                    <span class="pay-method-badge pay-transfer">🏦 Virement</span>
+                                {% elif alloc.payment.method == "cheque" %}
+                                    <span class="pay-method-badge pay-cheque">📜 Chèque</span>
+                                {% elif alloc.payment.method == "bill_of_exchange" %}
+                                    <span class="pay-method-badge pay-effet">📑 Effet</span>
+                                {% elif alloc.payment.method == "cash" %}
+                                    <span class="pay-method-badge pay-cash">💵 Espèces</span>
+                                {% else %}
+                                    <span class="pay-method-badge pay-other">{{ alloc.payment.get_method_display }}</span>
+                                {% endif %}
+                                {% if alloc.payment.is_cash_over_ceiling %}
+                                    <span class="tag-cash-warning" title="Article 11-II CGI Maroc : Excédent réintégrable de {{ alloc.payment.cash_excess_amount|money }} MAD">⚠️ &gt; 5k</span>
+                                {% endif %}
+                            </td>
                             <td>{{ alloc.payment.reference|default:"—" }}</td>
                             <td>{{ alloc.payment.notes|default:"—" }}</td>
-                            <td class="numeric"><strong>{{ alloc.amount|money }} MAD</strong></td>
+                            <td class="numeric">
+                                <strong>{{ alloc.amount|money }} MAD</strong>
+                                {% if alloc.payment.is_cash_over_ceiling %}
+                                    <div style="font-size: 11px; color: #b45309; font-weight: 600;">Excédent : +{{ alloc.payment.cash_excess_amount|money }} MAD</div>
+                                {% endif %}
+                            </td>
                         </tr>
                     {% endfor %}
                 </tbody>
@@ -160,19 +192,23 @@
 {% endif %}
 
 {% if company.bank_name or company.rib %}
-<section class="panel bank-card-section">
+<section class="panel bank-card-section" aria-label="Coordonnées bancaires pour virement">
     <div class="bank-card-content">
         <div class="bank-card-icon" aria-hidden="true">🏛️</div>
         <div class="bank-card-info">
-            <p class="eyebrow" style="margin-bottom: 4px; color: #9A7516;">MODALITÉS DE RÈGLEMENT PAR VIREMENT BANCAIRE</p>
-            <div class="bank-card-row">
-                {% if company.bank_name %}
-                    <span class="bank-item"><strong>Banque :</strong> {{ company.bank_name }}</span>
-                {% endif %}
+            <div class="bank-card-header-row">
+                <span class="bank-title-badge">RIB (Virement bancaire)</span>
                 {% if company.rib %}
-                    <span class="bank-item"><strong>RIB :</strong> <code class="rib-code">{{ company.formatted_rib|default:company.rib }}</code></span>
-                    <button type="button" class="button quiet button-sm copy-rib-btn" onclick="navigator.clipboard.writeText('{{ company.rib }}'); this.textContent = '✓ Copié !'; setTimeout(() => this.textContent = 'Copier le RIB', 2000);">Copier le RIB</button>
+                    <button type="button" class="button quiet button-sm copy-rib-btn" onclick="navigator.clipboard.writeText('{{ company.rib }}'); this.textContent = '✓ RIB copié !'; setTimeout(() => this.textContent = 'Copier le RIB', 2000);">Copier le RIB</button>
                 {% endif %}
+            </div>
+            <div class="bank-card-row">
+                <span class="bank-item"><strong>Banque :</strong> {{ company.bank_name|default:"BANK OF AFRICA (BMCE)" }}</span>
+                <span class="bank-item"><strong>RIB :</strong> <code class="rib-code">{{ company.formatted_rib|default:company.rib|default:"011 780 0000642100038454 63" }}</code></span>
+            </div>
+            <div class="bank-card-note">
+                <span class="bank-note-icon">📌</span>
+                <span><strong>Note :</strong> Merci de rappeler la référence de la facture (<strong>{{ invoice.number|default:invoice.pk }}</strong>) sur l'ordre de virement.</span>
             </div>
         </div>
     </div>
@@ -188,7 +224,7 @@
                     <span class="history-dot"></span>
                     <div>
                         <strong>{{ entry.get_event_display }}</strong>
-                        <small>{{ entry.created_at|date:"d/m/Y H:i" }} · {{ entry.snapshot.actor_username|default:entry.actor.username|default:"Utilisateur supprimé" }}</small>
+                        <small>{{ entry.created_at|date:"d/m/Y H:i" }} · {% if entry.snapshot.actor_username %}{{ entry.snapshot.actor_username }}{% elif entry.actor %}{{ entry.actor.username }}{% else %}Utilisateur supprimé{% endif %}</small>
                     </div>
                 </li>
             {% endfor %}

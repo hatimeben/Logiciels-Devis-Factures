@@ -171,6 +171,11 @@ def expense_payment(request, expense_id):
             messages.error(request, "Paiement impossible : " + " ".join(error.messages))
         else:
             messages.success(request, f"Paiement de {payment.amount} MAD enregistré pour la dépense.")
+            if payment.is_cash_over_ceiling:
+                messages.warning(
+                    request,
+                    payment.get_cgi_alert_message()
+                )
             return redirect("expense-detail", expense_id=expense.pk)
     return render(
         request,

@@ -45,10 +45,57 @@
         </div>
     </section>
 
+    <div id="cash-sage-alert" class="sage-alert-box" style="display: none; margin-bottom: 22px;" role="alert">
+        <div class="sage-alert-icon">⚠️</div>
+        <div class="sage-alert-body">
+            <h4 class="sage-alert-title">Avertissement Fiscal CGI Maroc (Article 11-II) · Règlement en Espèces</h4>
+            <p class="sage-alert-text">
+                Attention : Conformément à l'article 11-II du CGI marocain, les règlements en espèces sont déductibles dans la limite de <strong>5 000 MAD TTC</strong> par jour et par fournisseur. 
+                La fraction excédentaire (soit <strong id="cash-excess-display" class="sage-excess-value">0,00 MAD</strong>) ne sera pas déductible fiscalement et devra être réintégrée.
+            </p>
+            <div class="sage-alert-footer">
+                <span>ℹ️ <strong>Flexibilité préservée :</strong> Cet encaissement reste autorisé et non bloquant. Le gestionnaire conserve la liberté de valider le règlement réel tout en informant l'expert-comptable pour la liasse fiscale (Tableau 7).</span>
+            </div>
+        </div>
+    </div>
+
     <div class="form-actions">
         <button class="button primary" type="submit">Valider et imputer le règlement</button>
         <a class="button quiet" href="{% url 'invoice-detail' invoice.pk %}">Annuler</a>
     </div>
 </form>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const methodSelect = document.getElementById("id_method");
+    const amountInput = document.getElementById("id_amount");
+    const alertBox = document.getElementById("cash-sage-alert");
+    const excessDisplay = document.getElementById("cash-excess-display");
+    const threshold = 5000.00;
+
+    function evaluateCashLimit() {
+        if (!methodSelect || !amountInput || !alertBox) return;
+        const method = methodSelect.value;
+        const rawAmount = parseFloat(amountInput.value) || 0;
+
+        if (method === "cash" && rawAmount > threshold) {
+            const excess = rawAmount - threshold;
+            excessDisplay.textContent = excess.toLocaleString("fr-FR", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            }) + " MAD";
+            alertBox.style.display = "flex";
+        } else {
+            alertBox.style.display = "none";
+        }
+    }
+
+    if (methodSelect && amountInput) {
+        methodSelect.addEventListener("change", evaluateCashLimit);
+        amountInput.addEventListener("input", evaluateCashLimit);
+        evaluateCashLimit();
+    }
+});
+</script>
 {% endblock %}
 

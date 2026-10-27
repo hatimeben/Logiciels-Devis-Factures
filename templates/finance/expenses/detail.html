@@ -107,7 +107,7 @@
                     <span class="history-dot"></span>
                     <div>
                         <strong>{{ entry.get_event_display }}</strong>
-                        <small>{{ entry.created_at|date:"d/m/Y H:i" }} · {{ entry.snapshot.actor_username|default:entry.actor.username|default:"Utilisateur supprimé" }}</small>
+                        <small>{{ entry.created_at|date:"d/m/Y H:i" }} · {% if entry.snapshot.actor_username %}{{ entry.snapshot.actor_username }}{% elif entry.actor %}{{ entry.actor.username }}{% else %}Utilisateur supprimé{% endif %}</small>
                     </div>
                 </li>
             {% endfor %}
