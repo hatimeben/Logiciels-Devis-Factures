@@ -413,6 +413,70 @@ input:focus, select:focus, textarea:focus {
 .login-admin-link { align-self: center; margin-top: 24px; color: #71809a; font-size: 12px; }
 .login-admin-link:hover { color: var(--blue); }
 
+/* Encadré Coordonnées Bancaires & RIB */
+.bank-card-section {
+    background: #FAF5E8 !important;
+    border: 1px solid #E5D5A8 !important;
+    border-left: 4px solid #C59B27 !important;
+    border-radius: 14px;
+    padding: 16px 22px;
+    margin-bottom: 22px;
+}
+.bank-card-content {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+}
+.bank-card-icon {
+    font-size: 30px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.bank-card-info {
+    flex: 1;
+}
+.bank-card-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 16px;
+    font-size: 13.5px;
+    color: #0F172A;
+}
+.bank-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+.rib-code {
+    background: #FFFFFF;
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid #D5C391;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-weight: 700;
+    font-size: 13px;
+    color: #0F172A;
+    letter-spacing: 0.5px;
+}
+.copy-rib-btn {
+    padding: 4px 12px !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    border-radius: 6px !important;
+    background: #FFFFFF !important;
+    border: 1px solid #C59B27 !important;
+    color: #9A7516 !important;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.copy-rib-btn:hover {
+    background: #C59B27 !important;
+    color: #FFFFFF !important;
+}
+
 @media (max-width: 900px) {
     .topbar { gap: 20px; }
     .line-fields { grid-template-columns: repeat(6, minmax(0, 1fr)); }

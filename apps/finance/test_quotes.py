@@ -568,7 +568,7 @@ class QuoteModuleTests(TestCase):
         client = Client()
         root_response = client.get("/")
         self.assertEqual(root_response.status_code, 302)
-        self.assertEqual(root_response.url, reverse("quote-list"))
+        self.assertEqual(root_response.url, reverse("dashboard"))
         response = client.get(reverse("quote-detail", args=[quote.pk]))
         self.assertEqual(response.status_code, 302)
         self.assertIn("/connexion/", response.url)

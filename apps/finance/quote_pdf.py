@@ -406,6 +406,38 @@ def build_quote_pdf(quote):
             notes_table,
         ])
 
+    if company.bank_name or company.rib:
+        bank_lines = []
+        if company.bank_name:
+            bank_lines.append(f"<b>Banque :</b> {escape(company.bank_name)}")
+        if company.rib:
+            bank_lines.append(f"<b>RIB (virement) :</b> <font face='{bold_font}'>{escape(company.formatted_rib or company.rib)}</font>")
+        bank_table = Table(
+            [[
+                Paragraph(
+                    f"<b><font color='{MIDNIGHT_BLUE.hexval()}'>RÈGLEMENT & ACOMPTE PAR VIREMENT BANCAIRE</font></b><br/>"
+                    + " &nbsp;&nbsp;·&nbsp;&nbsp; ".join(bank_lines),
+                    ParagraphStyle("QuoteBankText", parent=styles["body"], fontSize=8, leading=11),
+                )
+            ]],
+            colWidths=[174 * mm],
+        )
+        bank_table.setStyle(
+            TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), GOLD_LIGHT),
+                ("BOX", (0, 0), (-1, -1), 0.5, GRID),
+                ("LINEBEFORE", (0, 0), (0, -1), 2.5, GOLD),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ])
+        )
+        story.extend([
+            Spacer(1, 6 * mm),
+            bank_table,
+        ])
+
     def draw_page(canvas, document):
         canvas.saveState()
         width, height = A4

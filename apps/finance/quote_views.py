@@ -128,7 +128,7 @@ def quote_edit(request, quote_id):
 def quote_detail(request, quote_id):
     quote = get_object_or_404(
         Quote.objects.select_related("customer", "project", "revision_of").prefetch_related(
-            "lines__service", "lines__tax_rate", "revisions"
+            "lines__service", "lines__tax_rate", "lines__invoice_lines", "revisions", "invoices"
         ),
         pk=quote_id,
     )
@@ -150,6 +150,7 @@ def quote_detail(request, quote_id):
     for line in lines:
         line.amounts = calculate_quote_totals([line])
     history = DocumentHistory.objects.filter(quote=quote).select_related("actor")
+    linked_invoices = list(quote.invoices.order_by("-created_at"))
     return render(
         request,
         "finance/quotes/detail.html",
@@ -160,14 +161,15 @@ def quote_detail(request, quote_id):
             "totals": totals,
             "has_discount": has_discount,
             "history": history,
+            "linked_invoices": linked_invoices,
             "today": timezone.localdate(),
             "can_edit": request.user.has_perm("finance.change_quote"),
             "can_add": request.user.has_perm("finance.add_quote"),
             "can_convert": (
-                quote.status == Quote.Status.ACCEPTED
+                quote.status in (Quote.Status.ACCEPTED, Quote.Status.PARTIALLY_INVOICED)
                 and request.user.has_perm("finance.add_invoice")
                 and request.user.has_perm("finance.change_quote")
-                and not Invoice.objects.filter(quote=quote).exists()
+                and not quote.is_fully_invoiced
             ),
         },
     )

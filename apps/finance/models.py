@@ -8,6 +8,7 @@ from django.core.validators import MinValueValidator
 from django.db import models
 from django.db import transaction
 from django.db.models import Q, Sum
+from django.utils import timezone
 
 from .money import round_money
 from .quote_calculations import calculate_quote_totals
@@ -261,9 +262,10 @@ class Quote(models.Model):
         DRAFT = "draft", "Brouillon"
         SENT = "sent", "Envoyé"
         ACCEPTED = "accepted", "Accepté"
+        PARTIALLY_INVOICED = "partially_invoiced", "Partiellement facturé"
+        CONVERTED = "converted", "Totalement facturé"
         REJECTED = "rejected", "Refusé"
         EXPIRED = "expired", "Expiré"
-        CONVERTED = "converted", "Converti en facture"
         CANCELLED = "cancelled", "Annulé"
 
     number = models.CharField("numéro", max_length=50, unique=True, null=True, blank=True)
@@ -329,6 +331,57 @@ class Quote(models.Model):
         if self.pk and self.status != self.Status.DRAFT:
             raise ValidationError("Un devis envoyé ne peut pas être supprimé.")
         return super().delete(*args, **kwargs)
+
+    @property
+    def invoice(self):
+        """Rétrocompatibilité : renvoie la première facture liée."""
+        return self.invoices.first()
+
+    @property
+    def total_quoted_quantity(self):
+        return sum((l.quantity for l in self.lines.all()), Decimal("0.000"))
+
+    @property
+    def total_invoiced_quantity(self):
+        return sum((l.invoiced_quantity for l in self.lines.all()), Decimal("0.000"))
+
+    @property
+    def total_remaining_quantity(self):
+        return sum((l.remaining_quantity for l in self.lines.all()), Decimal("0.000"))
+
+    @property
+    def invoicing_percentage(self):
+        total_q = self.total_quoted_quantity
+        if total_q > Decimal("0.000"):
+            inv_q = self.total_invoiced_quantity
+            return min(100.0, round(float((inv_q / total_q) * 100), 1))
+        return 0.0
+
+    @property
+    def is_fully_invoiced(self):
+        lines = list(self.lines.all())
+        return bool(lines) and all(l.is_fully_invoiced for l in lines)
+
+    @property
+    def is_partially_invoiced(self):
+        return (not self.is_fully_invoiced) and any(l.invoiced_quantity > Decimal("0.000") for l in self.lines.all())
+
+    def sync_invoicing_status(self):
+        """Met à jour le statut du devis en fonction des quantités facturées."""
+        if self.status in [self.Status.DRAFT, self.Status.REJECTED, self.Status.CANCELLED]:
+            return
+        if self.is_fully_invoiced:
+            if self.status != self.Status.CONVERTED:
+                type(self).objects.filter(pk=self.pk).update(status=self.Status.CONVERTED, updated_at=timezone.now())
+                self.status = self.Status.CONVERTED
+        elif self.is_partially_invoiced:
+            if self.status != self.Status.PARTIALLY_INVOICED:
+                type(self).objects.filter(pk=self.pk).update(status=self.Status.PARTIALLY_INVOICED, updated_at=timezone.now())
+                self.status = self.Status.PARTIALLY_INVOICED
+        else:
+            if self.status in [self.Status.PARTIALLY_INVOICED, self.Status.CONVERTED]:
+                type(self).objects.filter(pk=self.pk).update(status=self.Status.ACCEPTED, updated_at=timezone.now())
+                self.status = self.Status.ACCEPTED
 
     def __str__(self):
         return self.number or f"Devis brouillon #{self.pk or 'nouveau'}"
@@ -455,6 +508,33 @@ class QuoteLine(models.Model):
         if self.quote.status != Quote.Status.DRAFT:
             raise ValidationError("Les lignes d'un devis envoyé sont immuables.")
         return super().delete(*args, **kwargs)
+
+    @property
+    def invoiced_quantity(self):
+        """Quantité cumulée déjà facturée sur des factures actives (non annulées)."""
+        if not self.pk:
+            return Decimal("0.000")
+        total = (
+            self.invoice_lines.exclude(
+                invoice__status="cancelled"
+            ).aggregate(total=Sum("quantity"))["total"]
+            or Decimal("0.000")
+        )
+        return total
+
+    @property
+    def remaining_quantity(self):
+        """Quantité restante devisée non encore facturée."""
+        rem = self.quantity - self.invoiced_quantity
+        return max(Decimal("0.000"), rem)
+
+    @property
+    def is_fully_invoiced(self):
+        return self.remaining_quantity <= Decimal("0.000")
+
+    @property
+    def is_partially_invoiced(self):
+        return Decimal("0.000") < self.invoiced_quantity < self.quantity
 
     def __str__(self):
         return self.description
@@ -705,6 +785,20 @@ class CompanySettings(models.Model):
             parts.append(f"CNSS : {self.cnss}")
         return " · ".join(parts)
 
+    @property
+    def formatted_rib(self):
+        """
+        Retourne le RIB marocain à 24 chiffres avec espacement lisible :
+        3 chiffres (Banque) + 3 chiffres (Guichet) + 16 chiffres (Compte) + 2 chiffres (Clé).
+        Ex: 011 780 0000642100038454 63
+        """
+        if not self.rib:
+            return ""
+        clean = re.sub(r"\s+", "", self.rib)
+        if len(clean) == 24:
+            return f"{clean[0:3]} {clean[3:6]} {clean[6:22]} {clean[22:24]}"
+        return self.rib
+
     def __str__(self):
         return self.name
 
@@ -719,10 +813,10 @@ class Invoice(models.Model):
         CANCELLED = "cancelled", "Annulée"
 
     number = models.CharField("numéro", max_length=50, unique=True, null=True, blank=True)
-    quote = models.OneToOneField(
+    quote = models.ForeignKey(
         Quote,
         on_delete=models.PROTECT,
-        related_name="invoice",
+        related_name="invoices",
         verbose_name="devis d'origine",
         null=True,
         blank=True,
@@ -807,6 +901,14 @@ class InvoiceLine(models.Model):
         on_delete=models.CASCADE,
         related_name="lines",
         verbose_name="facture",
+    )
+    quote_line = models.ForeignKey(
+        "finance.QuoteLine",
+        on_delete=models.SET_NULL,
+        related_name="invoice_lines",
+        verbose_name="ligne de devis d'origine",
+        null=True,
+        blank=True,
     )
     service = models.ForeignKey(
         "catalog.Service",

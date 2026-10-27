@@ -159,6 +159,26 @@
     </section>
 {% endif %}
 
+{% if company.bank_name or company.rib %}
+<section class="panel bank-card-section">
+    <div class="bank-card-content">
+        <div class="bank-card-icon" aria-hidden="true">🏛️</div>
+        <div class="bank-card-info">
+            <p class="eyebrow" style="margin-bottom: 4px; color: #9A7516;">MODALITÉS DE RÈGLEMENT PAR VIREMENT BANCAIRE</p>
+            <div class="bank-card-row">
+                {% if company.bank_name %}
+                    <span class="bank-item"><strong>Banque :</strong> {{ company.bank_name }}</span>
+                {% endif %}
+                {% if company.rib %}
+                    <span class="bank-item"><strong>RIB :</strong> <code class="rib-code">{{ company.formatted_rib|default:company.rib }}</code></span>
+                    <button type="button" class="button quiet button-sm copy-rib-btn" onclick="navigator.clipboard.writeText('{{ company.rib }}'); this.textContent = '✓ Copié !'; setTimeout(() => this.textContent = 'Copier le RIB', 2000);">Copier le RIB</button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</section>
+{% endif %}
+
 <section class="panel form-panel">
     <div class="section-heading"><div><p class="eyebrow">TRAÇABILITÉ</p><h2>Historique</h2></div></div>
     {% if history %}

@@ -16,9 +16,13 @@
             <form method="post" action="{% url 'quote-send' quote.pk %}">{% csrf_token %}<button class="button primary" type="submit">Envoyer le devis</button></form>
         {% endif %}
         {% if can_convert %}
-            <form method="post" action="{% url 'invoice-convert' quote.pk %}">{% csrf_token %}<button class="button primary" type="submit">Convertir en facture</button></form>
+            <form method="post" action="{% url 'invoice-convert' quote.pk %}" style="display: inline;">
+                {% csrf_token %}
+                <button class="button primary" type="submit">{% if quote.status == "partially_invoiced" %}Facturer tout le solde{% else %}Convertir en facture{% endif %}</button>
+            </form>
+            <button class="button secondary" type="button" onclick="const box = document.getElementById('partial-billing-box'); box.style.display = box.style.display === 'none' ? 'block' : 'none'; box.scrollIntoView({behavior: 'smooth'});">⚖️ Facturation partielle</button>
         {% endif %}
-        {% if quote.status == "converted" and quote.invoice %}
+        {% if quote.status == "converted" and quote.invoice and not linked_invoices %}
             <a class="button secondary" href="{% url 'invoice-detail' quote.invoice.pk %}">Voir la facture liée</a>
         {% endif %}
         {% if quote.status == "sent" and can_edit %}
@@ -64,7 +68,17 @@
                     {% for line in lines %}
                         <tr>
                             <td>{{ line.description }}</td>
-                            <td class="numeric">{{ line.quantity }}</td>
+                            <td class="numeric">
+                                <strong>{{ line.quantity }}</strong>
+                                {% if line.invoiced_quantity > 0 %}
+                                    <div style="font-size: 11px; margin-top: 2px;">
+                                        <span style="color: #15803D;">Facturé : {{ line.invoiced_quantity }}</span>
+                                        {% if line.remaining_quantity > 0 %}
+                                            <span style="color: #9A7516; display: block;">Reste : {{ line.remaining_quantity }}</span>
+                                        {% endif %}
+                                    </div>
+                                {% endif %}
+                            </td>
                             <td class="numeric">{{ line.unit_price|money }} MAD</td>
                             {% if has_discount %}
                                 <td>{% if line.discount_value > 0 %}{% if line.discount_type == "percentage" %}{{ line.discount_value }} %{% else %}{{ line.discount_value|money }} MAD{% endif %}{% else %}—{% endif %}</td>
@@ -92,6 +106,129 @@
         <div class="grand-total"><span>Total TTC</span><strong>{{ totals.total|money }} MAD</strong></div>
     </div>
 </section>
+
+{% if can_convert %}
+<section id="partial-billing-box" class="panel form-panel" style="display: none; background: #FAF5E8; border: 1px solid #E5D5A8; border-left: 4px solid #D4AF37; margin-top: 18px;">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow" style="color: #9A7516;">ÉCHELONNEMENT & LIVRAISON PARTIELLE</p>
+            <h2>Générer une facture partielle (Acompte ou Tranche de livraison)</h2>
+            <p class="subheading">Spécifiez les quantités à imputer pour cette facture. Le solde restant restera disponible sur le devis.</p>
+        </div>
+    </div>
+    <form method="post" action="{% url 'invoice-convert' quote.pk %}">
+        {% csrf_token %}
+        <input type="hidden" name="is_partial" value="1">
+        <div class="table-scroll">
+            <table class="data-table" style="background: #FFFFFF;">
+                <thead>
+                    <tr>
+                        <th>Prestation</th>
+                        <th class="numeric">Devisé</th>
+                        <th class="numeric">Déjà facturé</th>
+                        <th class="numeric">Reste à facturer</th>
+                        <th style="width: 150px; text-align: right;">Quantité à facturer</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for line in lines %}
+                        <tr>
+                            <td><strong>{{ line.description }}</strong></td>
+                            <td class="numeric">{{ line.quantity }}</td>
+                            <td class="numeric" style="color: #15803D;">{{ line.invoiced_quantity }}</td>
+                            <td class="numeric font-bold" style="color: #1B2A4A;">{{ line.remaining_quantity }}</td>
+                            <td style="text-align: right;">
+                                <input
+                                    type="number"
+                                    name="qty_{{ line.pk }}"
+                                    value="{{ line.remaining_quantity }}"
+                                    min="0"
+                                    max="{{ line.remaining_quantity }}"
+                                    step="0.001"
+                                    style="width: 110px; padding: 5px 8px; font-weight: 700; border: 1px solid #D4AF37; border-radius: 6px; text-align: right;"
+                                    {% if line.remaining_quantity <= 0 %}disabled{% endif %}
+                                >
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div style="margin-top: 16px; display: flex; gap: 10px; align-items: center;">
+            <button class="button primary" type="submit">Générer la facture partielle brouillon →</button>
+            <button class="button quiet" type="button" onclick="document.getElementById('partial-billing-box').style.display='none';">Fermer</button>
+        </div>
+    </form>
+</section>
+{% endif %}
+
+{% if linked_invoices %}
+<section class="panel table-panel" style="margin-top: 18px; border-left: 4px solid #1B2A4A;">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow" style="color: #1B2A4A;">TRAÇABILITÉ COMMERCIALE & FISCALE (CGI MAROC)</p>
+            <h2>Factures générées depuis ce devis ({{ linked_invoices|length }})</h2>
+        </div>
+        {% if can_convert %}
+            <span class="status status-partially_invoiced">Facturation en cours ({{ quote.invoicing_percentage }} %)</span>
+        {% else %}
+            <span class="status status-converted">Intégralement facturé (100 %)</span>
+        {% endif %}
+    </div>
+    <div class="table-scroll">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Numéro de facture</th>
+                    <th>Date d'émission</th>
+                    <th>Statut</th>
+                    <th class="numeric">Total TTC</th>
+                    <th class="numeric">Reste à payer</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for inv in linked_invoices %}
+                    <tr>
+                        <td>
+                            <a class="table-link" href="{% url 'invoice-detail' inv.pk %}">
+                                <strong>{{ inv.number|default:"Brouillon" }}</strong>
+                            </a>
+                        </td>
+                        <td>{{ inv.issue_date|date:"d/m/Y"|default:"—" }}</td>
+                        <td><span class="status status-{{ inv.status }}">{{ inv.get_status_display }}</span></td>
+                        <td class="numeric">{{ inv.total_ttc|money }} MAD</td>
+                        <td class="numeric font-bold">{{ inv.remaining_balance|money }} MAD</td>
+                        <td>
+                            <a class="button quiet button-sm" href="{% url 'invoice-detail' inv.pk %}" style="padding: 3px 8px; font-size: 11.5px;">Consulter →</a>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endif %}
+
+{% if company.bank_name or company.rib %}
+<section class="panel bank-card-section">
+    <div class="bank-card-content">
+        <div class="bank-card-icon" aria-hidden="true">🏛️</div>
+        <div class="bank-card-info">
+            <p class="eyebrow" style="margin-bottom: 4px; color: #9A7516;">RÈGLEMENT & ACOMPTE PAR VIREMENT BANCAIRE</p>
+            <div class="bank-card-row">
+                {% if company.bank_name %}
+                    <span class="bank-item"><strong>Banque :</strong> {{ company.bank_name }}</span>
+                {% endif %}
+                {% if company.rib %}
+                    <span class="bank-item"><strong>RIB :</strong> <code class="rib-code">{{ company.formatted_rib|default:company.rib }}</code></span>
+                    <button type="button" class="button quiet button-sm copy-rib-btn" onclick="navigator.clipboard.writeText('{{ company.rib }}'); this.textContent = '✓ Copié !'; setTimeout(() => this.textContent = 'Copier le RIB', 2000);">Copier le RIB</button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</section>
+{% endif %}
 
 {% if quote.notes %}<section class="panel form-panel"><p class="eyebrow">NOTES</p><p class="notes">{{ quote.notes|linebreaksbr }}</p></section>{% endif %}
 {% if quote.revisions.all %}<section class="panel form-panel"><p class="eyebrow">VERSIONS LIÉES</p>{% for revision in quote.revisions.all %}<p><a href="{% url 'quote-detail' revision.pk %}">{{ revision.number|default:"Brouillon" }} · {{ revision.get_status_display }}</a></p>{% endfor %}</section>{% endif %}

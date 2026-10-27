@@ -311,12 +311,12 @@ def build_invoice_pdf(invoice):
         if company.bank_name:
             bank_lines.append(f"<b>Banque :</b> {escape(company.bank_name)}")
         if company.rib:
-            bank_lines.append(f"<b>RIB (virement) :</b> {escape(company.rib)}")
+            bank_lines.append(f"<b>RIB (virement) :</b> <font face='{bold_font}'>{escape(company.formatted_rib or company.rib)}</font>")
         bank_table = Table(
             [[
                 Paragraph(
                     f"<b><font color='{MIDNIGHT_BLUE.hexval()}'>MODALITÉS DE RÈGLEMENT PAR VIREMENT BANCAIRE</font></b><br/>"
-                    + " — ".join(bank_lines),
+                    + " &nbsp;&nbsp;·&nbsp;&nbsp; ".join(bank_lines),
                     ParagraphStyle("BankText", parent=body, fontSize=8, leading=11),
                 )
             ]],

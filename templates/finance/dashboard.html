@@ -1,199 +1,526 @@
 {% extends "finance/quotes/base.html" %}
 {% load finance_quotes %}
-{% block title %}Tableau de bord{% endblock %}
+{% block title %}Tableau de Bord Décisionnel · BenchTech{% endblock %}
+
 {% block content %}
-<div class="page-heading">
-    <div>
-        <p class="eyebrow">PILOTAGE & ACTIVITÉ</p>
-        <h1>Tableau de bord</h1>
-        <p class="subheading">Synthèse financière au {{ today|date:"d F Y" }} · BENCHTECH Gestion</p>
-    </div>
-    <div class="heading-actions">
-        {% if perms.finance.add_quote %}
-            <a class="button quiet" href="{% url 'quote-create' %}">＋ Devis</a>
-        {% endif %}
-        {% if perms.finance.add_invoice %}
-            <a class="button quiet" href="{% url 'invoice-create' %}">＋ Facture</a>
-        {% endif %}
-        {% if perms.finance.add_expense %}
-            <a class="button primary" href="{% url 'expense-create' %}">＋ Dépense</a>
-        {% endif %}
-    </div>
-</div>
-
-<!-- KPIs Principaux -->
-<section class="summary-grid">
-    <article class="panel summary-card">
-        <span>CA Facturé (Mois / Année)</span>
-        <strong>{{ invoiced_month|money }} MAD</strong>
-        <small>Total année : {{ invoiced_year|money }} MAD TTC</small>
-    </article>
-    <article class="panel summary-card">
-        <span>Encaissements (Mois / Global)</span>
-        <strong><span style="color: #15803d;">{{ payments_month|money }} MAD</span></strong>
-        <small>Total encaissé : {{ payments_global|money }} MAD</small>
-    </article>
-    <article class="panel summary-card">
-        <span>Créances clients à recouvrer</span>
-        <strong>
-            {% if pending_receivables > 0 %}
-                <span style="color: #b91c1c;">{{ pending_receivables|money }} MAD</span>
-            {% else %}
-                <span style="color: #15803d;">0,00 MAD</span>
-            {% endif %}
-        </strong>
-        <small>
-            {% if overdue_count > 0 %}
-                ⚠️ {{ overdue_count }} facture(s) en retard ({{ overdue_total|money }} MAD)
-            {% else %}
-                Aucun retard de paiement
-            {% endif %}
-        </small>
-    </article>
-    <article class="panel summary-card">
-        <span>Solde de trésorerie net</span>
-        <strong>
-            {% if net_cashflow_global >= 0 %}
-                <span style="color: #15803d;">+ {{ net_cashflow_global|money }} MAD</span>
-            {% else %}
-                <span style="color: #b91c1c;">{{ net_cashflow_global|money }} MAD</span>
-            {% endif %}
-        </strong>
-        <small>Encaissé − Dépenses payées (Mois : {{ net_cashflow_month|money }} MAD)</small>
-    </article>
-</section>
-
-<!-- Alertes retards si existantes -->
-{% if overdue_count > 0 %}
-<section class="panel table-panel" style="border-left: 4px solid #b91c1c;">
-    <div class="section-heading">
-        <div>
-            <p class="eyebrow" style="color: #b91c1c;">ATTENTION · RETARD D’ÉCHÉANCE</p>
-            <h2>Factures échues non soldées ({{ overdue_count }})</h2>
+<div class="executive-dashboard">
+    <!-- En-tête Exécutif -->
+    <header class="exec-header">
+        <div class="exec-header-main">
+            <div class="exec-badge">
+                <span class="pulse-indicator"></span>
+                <span>DATA ANALYTICS & BI EN TEMPS RÉEL</span>
+            </div>
+            <h1 class="exec-title">Tableau de Bord Décisionnel</h1>
+            <p class="exec-subtitle">
+                Pilotage stratégique, performance commerciale et trésorerie · Synthèse au {{ today|date:"d F Y" }}
+            </p>
         </div>
-        <span style="font-weight: 700; color: #b91c1c;">Total dû : {{ overdue_total|money }} MAD</span>
-    </div>
-    <div class="table-scroll">
-        <table class="data-table">
-            <thead>
-                <tr>
-                    <th>Numéro</th>
-                    <th>Client</th>
-                    <th>Échéance</th>
-                    <th>Total TTC</th>
-                    <th>Déjà réglé</th>
-                    <th class="numeric">Reste à payer</th>
-                    <th>Action</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for inv in overdue_invoices %}
-                    <tr>
-                        <td><a class="table-link" href="{% url 'invoice-detail' inv.pk %}"><strong>{{ inv.number }}</strong></a></td>
-                        <td>{{ inv.customer_snapshot.name|default:inv.customer.name }}</td>
-                        <td><span style="color: #b91c1c; font-weight: 600;">{{ inv.due_date|date:"d/m/Y" }}</span></td>
-                        <td>{{ inv.total_ttc|money }} MAD</td>
-                        <td>{{ inv.total_paid|money }} MAD</td>
-                        <td class="numeric"><strong style="color: #b91c1c;">{{ inv.remaining_balance|money }} MAD</strong></td>
-                        <td>
-                            {% if perms.finance.add_payment %}
-                                <a class="button quiet" href="{% url 'invoice-payment' inv.pk %}" style="padding: 3px 8px; font-size: 12px;">Encaisser</a>
-                            {% endif %}
-                        </td>
-                    </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</section>
-{% endif %}
+        <div class="exec-actions">
+            {% if perms.finance.add_quote %}
+                <a class="button quiet" href="{% url 'quote-create' %}">＋ Nouveau Devis</a>
+            {% endif %}
+            {% if perms.finance.add_invoice %}
+                <a class="button quiet" href="{% url 'invoice-create' %}">＋ Nouvelle Facture</a>
+            {% endif %}
+            {% if perms.finance.view_invoice %}
+                <a class="button secondary" href="{% url 'accounting-dashboard' %}">💼 Espace Comptabilité</a>
+            {% endif %}
+        </div>
+    </header>
 
-<!-- Activité Commerciale et Financière -->
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px;">
-    <!-- Colonne Devis & Factures -->
-    <div style="display: flex; flex-direction: column; gap: 16px;">
-        <!-- Pipeline Devis -->
-        <section class="panel">
+    <!-- Top KPI Cards (Bandeau de performance globale) -->
+    <section class="kpi-hero-grid">
+        <div class="kpi-hero-card">
+            <div class="kpi-hero-head">
+                <span class="kpi-hero-label">Chiffre d'Affaires Émis (TTC)</span>
+                <span class="kpi-hero-icon">📈</span>
+            </div>
+            <div class="kpi-hero-value">{{ cashflow.total_invoiced_ttc|money }} <small>MAD</small></div>
+            <div class="kpi-hero-footer">
+                <span>HT : <strong>{{ activity.total_net_ht|money }} MAD</strong></span>
+                <span class="kpi-pill kpi-pill-blue">Mois : {{ invoiced_month|money }} MAD</span>
+            </div>
+        </div>
+
+        <div class="kpi-hero-card">
+            <div class="kpi-hero-head">
+                <span class="kpi-hero-label">Trésorerie Encaissée</span>
+                <span class="kpi-hero-icon">💳</span>
+            </div>
+            <div class="kpi-hero-value text-green">{{ cashflow.total_collected_ttc|money }} <small>MAD</small></div>
+            <div class="kpi-hero-footer">
+                <span>Taux de recouvrement : <strong class="text-green">{{ cashflow.recovery_rate }} %</strong></span>
+                <span class="kpi-pill kpi-pill-green">Mois : {{ payments_month|money }} MAD</span>
+            </div>
+        </div>
+
+        <div class="kpi-hero-card">
+            <div class="kpi-hero-head">
+                <span class="kpi-hero-label">Taux de Conversion Devis</span>
+                <span class="kpi-hero-icon">🎯</span>
+            </div>
+            <div class="kpi-hero-value text-gold">{{ conversion.conversion_rate }} <small>%</small></div>
+            <div class="kpi-hero-footer">
+                <span>{{ conversion.converted_count }} convertis / {{ conversion.issued_count }} devis émis</span>
+                <span class="kpi-pill kpi-pill-gold">Gagnés : {{ conversion.win_rate }} %</span>
+            </div>
+        </div>
+
+        <div class="kpi-hero-card">
+            <div class="kpi-hero-head">
+                <span class="kpi-hero-label">Encours Clients Total</span>
+                <span class="kpi-hero-icon">⏳</span>
+            </div>
+            <div class="kpi-hero-value {% if cashflow.overdue_total > 0 %}text-red{% else %}text-green{% endif %}">
+                {{ cashflow.total_remaining_due|money }} <small>MAD</small>
+            </div>
+            <div class="kpi-hero-footer">
+                {% if cashflow.overdue_count > 0 %}
+                    <span class="text-red">⚠️ <strong>{{ cashflow.overdue_count }}</strong> facture(s) échue(s)</span>
+                    <span class="kpi-pill kpi-pill-red">{{ cashflow.overdue_total|money }} MAD</span>
+                {% else %}
+                    <span class="text-green">✓ Aucune créance échue</span>
+                    <span class="kpi-pill kpi-pill-green">100 % sain</span>
+                {% endif %}
+            </div>
+        </div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- BLOC 1 : Suivi du Chiffre d'Affaires par Ligne d'Activité -->
+    <!-- ======================================================== -->
+    <section class="bi-section">
+        <div class="bi-section-header">
+            <div>
+                <span class="bi-section-tag">BLOC 1 · ANALYSE STRATÉGIQUE DES VENTES</span>
+                <h2 class="bi-section-title">Chiffre d'Affaires par Ligne d'Activité</h2>
+                <p class="bi-section-desc">Ventilation dynamique et répartition en temps réel du chiffre d'affaires facturé entre les trois pôles d'excellence de BenchTech.</p>
+            </div>
+            <div class="bi-section-stat">
+                <small>Total CA HT facturé</small>
+                <strong>{{ activity.total_net_ht|money }} MAD</strong>
+            </div>
+        </div>
+
+        <!-- Jauge / Barre de répartition proportionnelle visuelle -->
+        <div class="revenue-distribution-wrap">
+            <div class="revenue-distribution-bar" title="Répartition du CA par pôle d'activité">
+                {% for pole in activity.poles %}
+                    {% if pole.percentage > 0 %}
+                        <div class="revenue-bar-segment" style="width: {{ pole.percentage }}%; background-color: {{ pole.color }};" title="{{ pole.name }} : {{ pole.percentage }} % ({{ pole.net_ht|money }} MAD HT)">
+                            {% if pole.percentage >= 12 %}<span>{{ pole.short_name }} · {{ pole.percentage }}%</span>{% endif %}
+                        </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+            <div class="revenue-distribution-legend">
+                {% for pole in activity.poles %}
+                    <div class="legend-item">
+                        <span class="legend-dot" style="background-color: {{ pole.color }};"></span>
+                        <span class="legend-name">{{ pole.name }}</span>
+                        <span class="legend-share" style="color: {{ pole.color }}; font-weight: 700;">{{ pole.percentage }} %</span>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Cartes Détaillées des 3 Pôles -->
+        <div class="poles-cards-grid">
+            {% for pole in activity.poles %}
+                <div class="pole-card" style="border-top: 4px solid {{ pole.color }};">
+                    <div class="pole-card-head">
+                        <div class="pole-icon-box" style="background-color: {{ pole.bg_tint }};">
+                            <span class="pole-icon">{{ pole.icon }}</span>
+                        </div>
+                        <div class="pole-head-info">
+                            <span class="pole-pill" style="color: {{ pole.color }}; background-color: {{ pole.bg_tint }};">PÔLE STRATÉGIQUE</span>
+                            <h3 class="pole-title">{{ pole.name }}</h3>
+                        </div>
+                    </div>
+
+                    <div class="pole-ca-display">
+                        <div class="pole-ca-main">
+                            <small>CA Réalisé (HT)</small>
+                            <span class="pole-ca-number" style="color: {{ pole.color }};">{{ pole.net_ht|money }} <small>MAD</small></span>
+                        </div>
+                        <div class="pole-badge-share" style="background-color: {{ pole.bg_tint }}; color: {{ pole.color }};">
+                            {{ pole.percentage }} % du CA
+                        </div>
+                    </div>
+
+                    <div class="pole-metrics-row">
+                        <div class="pole-submetric">
+                            <span>Total TTC</span>
+                            <strong>{{ pole.total_ttc|money }} MAD</strong>
+                        </div>
+                        <div class="pole-submetric">
+                            <span>Prestations facturées</span>
+                            <strong>{{ pole.count }}</strong>
+                        </div>
+                        <div class="pole-submetric">
+                            <span>Panier moyen HT</span>
+                            <strong>{{ pole.avg_ticket|money }} MAD</strong>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- BLOC 2 : Taux de Conversion Commercial & Cycle Devis     -->
+    <!-- ======================================================== -->
+    <section class="bi-section">
+        <div class="bi-section-header">
+            <div>
+                <span class="bi-section-tag">BLOC 2 · PERFORMANCE COMMERCIALE & PIPELINE</span>
+                <h2 class="bi-section-title">Taux de Conversion Commercial</h2>
+                <p class="bi-section-desc">Efficacité de transformation des propositions commerciales en contrats validés et factures émises.</p>
+            </div>
+            <div class="bi-section-stat">
+                <small>Volume Devis Émis</small>
+                <strong>{{ conversion.issued_count }} devis</strong>
+            </div>
+        </div>
+
+        <div class="conversion-grid">
+            <!-- Colonne Jauge de Conversion & Ratios clés -->
+            <div class="conversion-scorecard">
+                <div class="conversion-gauge-box">
+                    <div class="circular-progress-wrap">
+                        <svg class="circular-progress" viewBox="0 0 120 120">
+                            <circle class="circle-bg" cx="60" cy="60" r="50"></circle>
+                            <circle class="circle-bar" cx="60" cy="60" r="50" style="stroke-dashoffset: calc(314.159 - (314.159 * {{ conversion.conversion_rate }}) / 100);"></circle>
+                        </svg>
+                        <div class="circular-content">
+                            <span class="circular-number">{{ conversion.conversion_rate }}<small>%</small></span>
+                            <span class="circular-label">CONVERTIS</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="conversion-score-details">
+                    <h3 class="conversion-score-title">Taux de Transformation Réel</h3>
+                    <p class="conversion-score-text">
+                        Sur <strong>{{ conversion.issued_count }}</strong> devis émis et soumis aux clients, 
+                        <strong>{{ conversion.converted_count }}</strong> ont été directement transformés en factures validées, 
+                        représentant un chiffre d'affaires gagné de <strong>{{ conversion.converted_ttc|money }} MAD TTC</strong>.
+                    </p>
+                    <div class="conversion-mini-kpis">
+                        <div>
+                            <span>Taux d'acceptation</span>
+                            <strong class="text-gold">{{ conversion.win_rate }} %</strong>
+                        </div>
+                        <div>
+                            <span>Total Gagné (Accepté + Facturé)</span>
+                            <strong class="text-navy">{{ conversion.won_ttc|money }} MAD</strong>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Colonne Pipeline & Entonnoir Commercial -->
+            <div class="pipeline-funnel-card">
+                <div class="pipeline-card-head">
+                    <h3>État d'avancement des devis dans le cycle de vente</h3>
+                    <span class="pipeline-total-badge">{{ conversion.total_quotes_count }} devis au total</span>
+                </div>
+
+                <div class="funnel-steps">
+                    <!-- Étape 1 : En cours de négociation -->
+                    <div class="funnel-step">
+                        <div class="funnel-step-head">
+                            <div class="funnel-step-title">
+                                <span class="funnel-dot funnel-dot-blue"></span>
+                                <strong>En cours de négociation</strong>
+                                <span class="funnel-badge-qty">{{ conversion.negotiation_count }}</span>
+                            </div>
+                            <div class="funnel-step-amount">
+                                <strong>{{ conversion.negotiation_ttc|money }} MAD</strong>
+                                <small>TTC potentiel</small>
+                            </div>
+                        </div>
+                        <div class="funnel-progress-track">
+                            <div class="funnel-progress-fill bg-blue" style="width: {% if conversion.issued_count > 0 %}{{ conversion.negotiation_share }}{% else %}0{% endif %}%;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Étape 2 : Acceptés (en attente + convertis) -->
+                    <div class="funnel-step">
+                        <div class="funnel-step-head">
+                            <div class="funnel-step-title">
+                                <span class="funnel-dot funnel-dot-green"></span>
+                                <strong>Acceptés & Convertis</strong>
+                                <span class="funnel-badge-qty">{{ conversion.won_count }}</span>
+                                <small class="text-muted">(dont {{ conversion.converted_count }} facturés)</small>
+                            </div>
+                            <div class="funnel-step-amount">
+                                <strong class="text-green">{{ conversion.won_ttc|money }} MAD</strong>
+                                <small>TTC validé</small>
+                            </div>
+                        </div>
+                        <div class="funnel-progress-track">
+                            <div class="funnel-progress-fill bg-green" style="width: {% if conversion.issued_count > 0 %}{{ conversion.won_share }}{% else %}0{% endif %}%;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Étape 3 : Refusés / Sans suite -->
+                    <div class="funnel-step">
+                        <div class="funnel-step-head">
+                            <div class="funnel-step-title">
+                                <span class="funnel-dot funnel-dot-red"></span>
+                                <strong>Refusés ou sans suite</strong>
+                                <span class="funnel-badge-qty">{{ conversion.rejected_count }}</span>
+                            </div>
+                            <div class="funnel-step-amount">
+                                <strong class="text-muted">{{ conversion.rejected_ttc|money }} MAD</strong>
+                                <small>TTC perdu</small>
+                            </div>
+                        </div>
+                        <div class="funnel-progress-track">
+                            <div class="funnel-progress-fill bg-red" style="width: {% if conversion.issued_count > 0 %}{{ conversion.rejected_share }}{% else %}0{% endif %}%;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Étape 4 : Brouillons -->
+                    <div class="funnel-step funnel-step-muted">
+                        <div class="funnel-step-head">
+                            <div class="funnel-step-title">
+                                <span class="funnel-dot funnel-dot-gray"></span>
+                                <span>Brouillons en préparation</span>
+                                <span class="funnel-badge-qty">{{ conversion.draft_count }}</span>
+                            </div>
+                            <div class="funnel-step-amount">
+                                <span>{{ conversion.draft_ttc|money }} MAD</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- BLOC 3 : Trésorerie & Encours Clients (Créances échues)  -->
+    <!-- ======================================================== -->
+    <section class="bi-section">
+        <div class="bi-section-header">
+            <div>
+                <span class="bi-section-tag">BLOC 3 · TRÉSORERIE & MAÎTRISE DU RISQUE CLIENT</span>
+                <h2 class="bi-section-title">Trésorerie & Encours Clients</h2>
+                <p class="bi-section-desc">Suivi analytique des flux de règlements, pilotage des créances saines vs échues et balance âgée pour optimiser le recouvrement.</p>
+            </div>
+            <div class="bi-section-stat">
+                <small>Taux de Recouvrement</small>
+                <strong class="text-green">{{ cashflow.recovery_rate }} %</strong>
+            </div>
+        </div>
+
+        <div class="cashflow-grid">
+            <!-- 1. Synthèse Trésorerie & Recouvrement -->
+            <div class="cashflow-card">
+                <h3 class="card-subtitle">Évolution des Encaissements vs Reste à Recouvrer</h3>
+                <div class="cashflow-bar-container">
+                    <div class="cashflow-stacked-bar">
+                        <div class="cashflow-seg-collected" style="width: {{ cashflow.recovery_rate }}%;" title="Encaissé : {{ cashflow.recovery_rate }}%"></div>
+                        <div class="cashflow-seg-pending" style="width: calc(100% - {{ cashflow.recovery_rate }}%);" title="Reste dû : {{ cashflow.total_remaining_due|money }} MAD"></div>
+                    </div>
+                </div>
+                <div class="cashflow-split-metrics">
+                    <div class="split-col">
+                        <span class="split-label">Total Encaissé (TTC)</span>
+                        <strong class="split-val text-green">{{ cashflow.total_collected_ttc|money }} MAD</strong>
+                        <small>{{ cashflow.recovery_rate }} % du CA facturé</small>
+                    </div>
+                    <div class="split-col">
+                        <span class="split-label">Encours Restant Dû</span>
+                        <strong class="split-val text-navy">{{ cashflow.total_remaining_due|money }} MAD</strong>
+                        <small>{% if cashflow.total_invoiced_ttc > 0 %}{{ cashflow.overdue_share|add:cashflow.healthy_share }}{% else %}0{% endif %} % en attente</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. Ventilation : Créances Non Échues vs Créances Échues -->
+            <div class="cashflow-card">
+                <h3 class="card-subtitle">Santé du Poste Clients & Risque d'Impayés</h3>
+                <div class="receivables-health-box">
+                    <div class="health-col health-col-healthy">
+                        <div class="health-head">
+                            <span class="health-icon">🛡️</span>
+                            <div>
+                                <strong>Créances Saines</strong>
+                                <small>Échéance non dépassée</small>
+                            </div>
+                        </div>
+                        <div class="health-amount text-navy">{{ cashflow.healthy_total|money }} <small>MAD</small></div>
+                        <div class="health-badge">{{ cashflow.healthy_count }} facture(s) · {{ cashflow.healthy_share }} % de l'encours</div>
+                    </div>
+
+                    <div class="health-col health-col-overdue">
+                        <div class="health-head">
+                            <span class="health-icon">⚠️</span>
+                            <div>
+                                <strong>Créances Échues</strong>
+                                <small>Échéance dépassée (retard)</small>
+                            </div>
+                        </div>
+                        <div class="health-amount text-red">{{ cashflow.overdue_total|money }} <small>MAD</small></div>
+                        <div class="health-badge health-badge-red">{{ cashflow.overdue_count }} facture(s) en retard · {{ cashflow.overdue_share }} %</div>
+                    </div>
+                </div>
+
+                <!-- Balance Âgée (Aging brackets) -->
+                <div class="aging-box">
+                    <span class="aging-title">Balance Âgée des Créances Échues :</span>
+                    <div class="aging-bars">
+                        <div class="aging-pill aging-pill-30">
+                            <small>&lt; 30 jours</small>
+                            <strong>{{ cashflow.aging_less_30|money }} MAD</strong>
+                            <span>({{ cashflow.aging_less_30_count }})</span>
+                        </div>
+                        <div class="aging-pill aging-pill-60">
+                            <small>30 à 60 jours</small>
+                            <strong>{{ cashflow.aging_30_60|money }} MAD</strong>
+                            <span>({{ cashflow.aging_30_60_count }})</span>
+                        </div>
+                        <div class="aging-pill aging-pill-90">
+                            <small>&gt; 60 jours (critique)</small>
+                            <strong>{{ cashflow.aging_over_60|money }} MAD</strong>
+                            <span>({{ cashflow.aging_over_60_count }})</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tableau des Créances Échues Prioritaires (Action immédiate de recouvrement) -->
+        {% if cashflow.overdue_count > 0 %}
+            <div class="overdue-table-card">
+                <div class="overdue-table-header">
+                    <div>
+                        <span class="text-red font-bold">🔴 PLAN DE RELANCE & RECOUVREMENT PRIORITAIRE</span>
+                        <h3>Factures Échues Nécessitant Relance Immédiate</h3>
+                    </div>
+                    <span class="badge-red-bold">{{ cashflow.overdue_count }} client(s) en retard</span>
+                </div>
+                <div class="table-scroll">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Facture</th>
+                                <th>Client</th>
+                                <th>Date d'émission</th>
+                                <th>Date d'échéance</th>
+                                <th>Retard constaté</th>
+                                <th class="numeric">Total Facturé</th>
+                                <th class="numeric">Solde à recouvrer</th>
+                                <th>Actions de relance</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in cashflow.overdue_invoices %}
+                                <tr>
+                                    <td>
+                                        <a class="table-link" href="{% url 'invoice-detail' item.pk %}">
+                                            <strong>{{ item.number }}</strong>
+                                        </a>
+                                    </td>
+                                    <td><strong>{{ item.customer_name }}</strong></td>
+                                    <td>{{ item.issue_date|date:"d/m/Y" }}</td>
+                                    <td><strong class="text-red">{{ item.due_date|date:"d/m/Y" }}</strong></td>
+                                    <td>
+                                        <span class="badge-delay">⏱️ +{{ item.days_overdue }} jours</span>
+                                    </td>
+                                    <td class="numeric">{{ item.total_ttc|money }} MAD</td>
+                                    <td class="numeric">
+                                        <strong class="text-red font-mono" style="font-size: 14px;">{{ item.remaining|money }} MAD</strong>
+                                    </td>
+                                    <td>
+                                        <div style="display: flex; gap: 6px;">
+                                            {% if perms.finance.add_payment %}
+                                                <a class="button primary button-sm" href="{% url 'invoice-payment' item.pk %}" style="padding: 3px 8px; font-size: 11.5px;">Encaisser</a>
+                                            {% endif %}
+                                            <a class="button quiet button-sm" href="{% url 'invoice-detail' item.pk %}" style="padding: 3px 8px; font-size: 11.5px;">Détail</a>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        {% endif %}
+    </section>
+
+    <!-- Activité Récente (Dernières Factures & Règlements) -->
+    <div class="recent-activity-grid">
+        <!-- Dernières Factures -->
+        <div class="panel table-panel">
             <div class="section-heading">
                 <div>
-                    <p class="eyebrow">VENTES</p>
-                    <h2>Pipeline des devis</h2>
+                    <p class="eyebrow">FLUX DE FACTURATION</p>
+                    <h2>Dernières factures émises</h2>
                 </div>
-                <span class="status status-accepted" title="Taux de conversion">{{ conversion_rate }} % convertis</span>
-            </div>
-            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; text-align: center; margin-top: 8px;">
-                <div style="padding: 10px; background: #f8fafc; border-radius: 6px;">
-                    <span style="display: block; font-size: 11px; color: #64748b;">Brouillons</span>
-                    <strong style="font-size: 18px;">{{ quotes_draft }}</strong>
-                </div>
-                <div style="padding: 10px; background: #eff6ff; border-radius: 6px;">
-                    <span style="display: block; font-size: 11px; color: #1e40af;">Envoyés</span>
-                    <strong style="font-size: 18px; color: #1e40af;">{{ quotes_sent }}</strong>
-                </div>
-                <div style="padding: 10px; background: #f0fdf4; border-radius: 6px;">
-                    <span style="display: block; font-size: 11px; color: #15803d;">Acceptés</span>
-                    <strong style="font-size: 18px; color: #15803d;">{{ quotes_accepted }}</strong>
-                </div>
-                <div style="padding: 10px; background: #fef2f2; border-radius: 6px;">
-                    <span style="display: block; font-size: 11px; color: #991b1b;">Refusés</span>
-                    <strong style="font-size: 18px; color: #991b1b;">{{ quotes_rejected }}</strong>
-                </div>
-            </div>
-        </section>
-
-        <!-- Dernières Factures -->
-        <section class="panel table-panel">
-            <div class="section-heading">
-                <div><p class="eyebrow">FACTURATION</p><h2>Dernières factures</h2></div>
-                <a class="button quiet" href="{% url 'invoice-list' %}">Toutes →</a>
+                <a class="button quiet" href="{% url 'invoice-list' %}">Toutes les factures →</a>
             </div>
             {% if recent_invoices %}
                 <div class="table-scroll">
                     <table class="data-table">
                         <thead>
-                            <tr><th>Numéro</th><th>Client</th><th>Statut</th><th class="numeric">Total TTC</th></tr>
+                            <tr>
+                                <th>Numéro</th>
+                                <th>Client</th>
+                                <th>Statut</th>
+                                <th class="numeric">Total TTC</th>
+                            </tr>
                         </thead>
                         <tbody>
                             {% for inv in recent_invoices %}
                                 <tr>
-                                    <td><a class="table-link" href="{% url 'invoice-detail' inv.pk %}">{{ inv.number }}</a></td>
+                                    <td><a class="table-link" href="{% url 'invoice-detail' inv.pk %}"><strong>{{ inv.number }}</strong></a></td>
                                     <td>{{ inv.customer_snapshot.name|default:inv.customer.name }}</td>
                                     <td><span class="status status-{{ inv.status }}">{{ inv.get_status_display }}</span></td>
-                                    <td class="numeric">{{ inv.total_ttc|money }} MAD</td>
+                                    <td class="numeric font-bold">{{ inv.total_ttc|money }} MAD</td>
                                 </tr>
                             {% endfor %}
                         </tbody>
                     </table>
                 </div>
             {% else %}
-                <p class="empty-inline">Aucune facture émise pour le moment.</p>
+                <p class="empty-inline">Aucune facture enregistrée pour l'instant.</p>
             {% endif %}
-        </section>
-    </div>
+        </div>
 
-    <!-- Colonne Règlements & Dépenses -->
-    <div style="display: flex; flex-direction: column; gap: 16px;">
         <!-- Derniers Règlements Clients -->
-        <section class="panel table-panel">
+        <div class="panel table-panel">
             <div class="section-heading">
-                <div><p class="eyebrow">ENCAISSEMENTS</p><h2>Derniers règlements clients</h2></div>
+                <div>
+                    <p class="eyebrow">FLUX DE TRÉSORERIE</p>
+                    <h2>Derniers encaissements reçus</h2>
+                </div>
                 {% if perms.finance.view_payment %}
-                    <a class="button quiet" href="{% url 'payment-list' %}">Tous →</a>
+                    <a class="button quiet" href="{% url 'payment-list' %}">Tous les règlements →</a>
                 {% endif %}
             </div>
             {% if recent_payments %}
                 <div class="table-scroll">
                     <table class="data-table">
                         <thead>
-                            <tr><th>Date</th><th>Client</th><th>Mode</th><th class="numeric">Montant</th></tr>
+                            <tr>
+                                <th>Date</th>
+                                <th>Client</th>
+                                <th>Mode</th>
+                                <th class="numeric">Montant encaissé</th>
+                            </tr>
                         </thead>
                         <tbody>
                             {% for p in recent_payments %}
                                 <tr>
                                     <td>{{ p.payment_date|date:"d/m/Y" }}</td>
-                                    <td>{{ p.customer.name }}</td>
+                                    <td><strong>{{ p.customer.name }}</strong></td>
                                     <td>{{ p.get_method_display }}</td>
-                                    <td class="numeric"><strong style="color: #15803d;">{{ p.amount|money }} MAD</strong></td>
+                                    <td class="numeric"><strong class="text-green">+ {{ p.amount|money }} MAD</strong></td>
                                 </tr>
                             {% endfor %}
                         </tbody>
@@ -202,21 +529,29 @@
             {% else %}
                 <p class="empty-inline">Aucun règlement client enregistré.</p>
             {% endif %}
-        </section>
+        </div>
 
         <!-- Dernières Dépenses -->
-        <section class="panel table-panel">
+        <div class="panel table-panel">
             <div class="section-heading">
-                <div><p class="eyebrow">DÉPENSES</p><h2>Dernières dépenses</h2></div>
+                <div>
+                    <p class="eyebrow">DÉPENSES & CHARGES</p>
+                    <h2>Dernières dépenses</h2>
+                </div>
                 {% if perms.finance.view_expense %}
-                    <a class="button quiet" href="{% url 'expense-list' %}">Toutes →</a>
+                    <a class="button quiet" href="{% url 'expense-list' %}">Toutes les dépenses →</a>
                 {% endif %}
             </div>
             {% if recent_expenses %}
                 <div class="table-scroll">
                     <table class="data-table">
                         <thead>
-                            <tr><th>Date</th><th>Description</th><th>Statut</th><th class="numeric">Montant</th></tr>
+                            <tr>
+                                <th>Date</th>
+                                <th>Description</th>
+                                <th>Statut</th>
+                                <th class="numeric">Montant</th>
+                            </tr>
                         </thead>
                         <tbody>
                             {% for exp in recent_expenses %}
@@ -230,7 +565,7 @@
                                         {% endif %}
                                     </td>
                                     <td><span class="status status-{{ exp.payment_status|lower|cut:' ' }}">{{ exp.payment_status }}</span></td>
-                                    <td class="numeric">{{ exp.amount|money }} MAD</td>
+                                    <td class="numeric font-bold">{{ exp.amount|money }} MAD</td>
                                 </tr>
                             {% endfor %}
                         </tbody>
@@ -239,8 +574,832 @@
             {% else %}
                 <p class="empty-inline">Aucune dépense enregistrée.</p>
             {% endif %}
-        </section>
+        </div>
     </div>
-</div>
-{% endblock %}
 
+    <!-- ======================================================== -->
+    <!-- Pied de Page Exécutif & Slogan Officiel                  -->
+    <!-- ======================================================== -->
+    <footer class="exec-footer">
+        <div class="exec-footer-divider"></div>
+        <div class="exec-footer-content">
+            <div class="exec-footer-brand">
+                <span class="exec-footer-mark">B</span>
+                <div>
+                    <strong class="exec-footer-name">BENCHTECH GESTION</strong>
+                    <span class="exec-footer-meta">Système Décisionnel & Pilotage Financier · Maroc</span>
+                </div>
+            </div>
+            <div class="exec-footer-slogan">
+                <span class="slogan-quote">«</span>
+                <span class="slogan-text">{{ brand_slogan|default:"shaping tomorrow, today" }}</span>
+                <span class="slogan-quote">»</span>
+            </div>
+        </div>
+    </footer>
+</div>
+
+<!-- ======================================================== -->
+<!-- Styles Dédiés Tableau de Bord Décisionnel (Bleu Nuit & Or)-->
+<!-- ======================================================== -->
+<style>
+:root {
+    --bench-midnight: #1B2A4A;
+    --bench-midnight-dark: #0F172A;
+    --bench-gold: #D4AF37;
+    --bench-gold-dark: #9A7516;
+    --bench-gold-light: #FAF5E8;
+    --bench-blue: #2563EB;
+    --bench-green: #15803D;
+    --bench-red: #B91C1C;
+    --bench-card-bg: #FFFFFF;
+    --bench-border: #E2E8F0;
+}
+
+.executive-dashboard {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+    padding-bottom: 20px;
+}
+
+/* En-tête Exécutif */
+.exec-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--bench-border);
+}
+.exec-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: #FAF5E8;
+    color: #9A7516;
+    border: 1px solid #E5D5A8;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    margin-bottom: 6px;
+}
+.pulse-indicator {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background-color: #D4AF37;
+    box-shadow: 0 0 0 rgba(212, 175, 55, 0.4);
+    animation: pulse 2s infinite;
+}
+@keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(212, 175, 55, 0.7); }
+    70% { box-shadow: 0 0 0 8px rgba(212, 175, 55, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(212, 175, 55, 0); }
+}
+.exec-title {
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--bench-midnight);
+    margin: 0 0 4px 0;
+    letter-spacing: -0.5px;
+}
+.exec-subtitle {
+    margin: 0;
+    color: #64748B;
+    font-size: 13.5px;
+}
+.exec-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+/* Bandeau Hero KPI Cards */
+.kpi-hero-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+}
+.kpi-hero-card {
+    background: #FFFFFF;
+    border: 1px solid var(--bench-border);
+    border-radius: 12px;
+    padding: 18px 20px;
+    box-shadow: 0 2px 10px rgba(27, 42, 74, 0.04);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.kpi-hero-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(27, 42, 74, 0.08);
+}
+.kpi-hero-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+.kpi-hero-label {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #64748B;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+.kpi-hero-icon {
+    font-size: 18px;
+}
+.kpi-hero-value {
+    font-size: 24px;
+    font-weight: 800;
+    color: var(--bench-midnight);
+    margin-bottom: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+.kpi-hero-value small {
+    font-size: 14px;
+    font-weight: 600;
+    color: #94A3B8;
+}
+.kpi-hero-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    color: #475569;
+    border-top: 1px solid #F1F5F9;
+    padding-top: 10px;
+}
+.kpi-pill {
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+}
+.kpi-pill-blue { background: #EFF6FF; color: #1D4ED8; }
+.kpi-pill-green { background: #F0FDF4; color: #15803D; }
+.kpi-pill-gold { background: #FAF5E8; color: #9A7516; }
+.kpi-pill-red { background: #FEF2F2; color: #B91C1C; }
+
+/* Sections Décisionnelles */
+.bi-section {
+    background: #FFFFFF;
+    border: 1px solid var(--bench-border);
+    border-radius: 14px;
+    padding: 24px;
+    box-shadow: 0 4px 16px rgba(27, 42, 74, 0.04);
+}
+.bi-section-header {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 14px;
+    margin-bottom: 22px;
+    border-bottom: 1px solid #F1F5F9;
+    padding-bottom: 14px;
+}
+.bi-section-tag {
+    font-size: 11px;
+    font-weight: 800;
+    color: var(--bench-gold-dark);
+    letter-spacing: 0.8px;
+    display: block;
+    margin-bottom: 4px;
+}
+.bi-section-title {
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--bench-midnight);
+    margin: 0 0 4px 0;
+}
+.bi-section-desc {
+    margin: 0;
+    font-size: 13px;
+    color: #64748B;
+}
+.bi-section-stat {
+    text-align: right;
+    background: #F8FAFC;
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid #E2E8F0;
+}
+.bi-section-stat small {
+    display: block;
+    font-size: 11px;
+    color: #64748B;
+    text-transform: uppercase;
+}
+.bi-section-stat strong {
+    font-size: 17px;
+    color: var(--bench-midnight);
+}
+
+/* BLOC 1 : Répartition du CA */
+.revenue-distribution-wrap {
+    margin-bottom: 22px;
+}
+.revenue-distribution-bar {
+    display: flex;
+    height: 32px;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #F1F5F9;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.08);
+    margin-bottom: 12px;
+}
+.revenue-bar-segment {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #FFFFFF;
+    font-size: 11.5px;
+    font-weight: 700;
+    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 8px;
+}
+.revenue-distribution-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    font-size: 12.5px;
+}
+.legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+.legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+}
+.legend-name { color: #334155; }
+
+/* Grille des Cartes Pôles */
+.poles-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+    gap: 16px;
+}
+.pole-card {
+    background: #F8FAFC;
+    border: 1px solid var(--bench-border);
+    border-radius: 10px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+.pole-card-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+.pole-icon-box {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+}
+.pole-pill {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    display: inline-block;
+    margin-bottom: 2px;
+}
+.pole-title {
+    font-size: 14.5px;
+    font-weight: 700;
+    color: var(--bench-midnight);
+    margin: 0;
+}
+.pole-ca-display {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #E2E8F0;
+}
+.pole-ca-main small {
+    display: block;
+    font-size: 11px;
+    color: #64748B;
+    text-transform: uppercase;
+}
+.pole-ca-number {
+    font-size: 22px;
+    font-weight: 800;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+.pole-badge-share {
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+}
+.pole-metrics-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    text-align: center;
+}
+.pole-submetric {
+    background: #FFFFFF;
+    padding: 8px 4px;
+    border-radius: 6px;
+    border: 1px solid #E2E8F0;
+}
+.pole-submetric span {
+    display: block;
+    font-size: 10.5px;
+    color: #64748B;
+    margin-bottom: 2px;
+}
+.pole-submetric strong {
+    font-size: 12px;
+    color: var(--bench-midnight);
+}
+
+/* BLOC 2 : Conversion & Pipeline */
+.conversion-grid {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    gap: 20px;
+}
+@media (max-width: 900px) {
+    .conversion-grid { grid-template-columns: 1fr; }
+}
+.conversion-scorecard {
+    background: #FAF5E8;
+    border: 1px solid #E5D5A8;
+    border-left: 4px solid var(--bench-gold);
+    border-radius: 12px;
+    padding: 22px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+.circular-progress-wrap {
+    position: relative;
+    width: 130px;
+    height: 130px;
+    margin: 8px auto 16px auto;
+}
+.circular-progress {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+}
+.circle-bg {
+    fill: none;
+    stroke: #E5D5A8;
+    stroke-width: 10;
+}
+.circle-bar {
+    fill: none;
+    stroke: var(--bench-gold);
+    stroke-width: 10;
+    stroke-linecap: round;
+    stroke-dasharray: 314.159;
+    transition: stroke-dashoffset 0.8s ease-in-out;
+}
+.circular-content {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+.circular-number {
+    font-size: 26px;
+    font-weight: 800;
+    color: var(--bench-midnight);
+    line-height: 1;
+}
+.circular-number small { font-size: 15px; }
+.circular-label {
+    font-size: 10px;
+    font-weight: 800;
+    color: var(--bench-gold-dark);
+    letter-spacing: 1px;
+    margin-top: 4px;
+}
+.conversion-score-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--bench-midnight);
+    margin: 0 0 8px 0;
+}
+.conversion-score-text {
+    font-size: 12.5px;
+    color: #475569;
+    line-height: 1.5;
+    margin-bottom: 14px;
+}
+.conversion-mini-kpis {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    width: 100%;
+    text-align: center;
+    border-top: 1px solid #E5D5A8;
+    padding-top: 12px;
+}
+.conversion-mini-kpis span {
+    display: block;
+    font-size: 11px;
+    color: #64748B;
+}
+.conversion-mini-kpis strong {
+    font-size: 14px;
+}
+
+/* Pipeline des Devis */
+.pipeline-funnel-card {
+    background: #FFFFFF;
+    border: 1px solid var(--bench-border);
+    border-radius: 12px;
+    padding: 20px;
+}
+.pipeline-card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 18px;
+}
+.pipeline-card-head h3 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--bench-midnight);
+}
+.pipeline-total-badge {
+    background: #F1F5F9;
+    color: #475569;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 600;
+}
+.funnel-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.funnel-step {
+    background: #F8FAFC;
+    border: 1px solid var(--bench-border);
+    border-radius: 8px;
+    padding: 12px 16px;
+}
+.funnel-step-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+.funnel-step-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13.5px;
+}
+.funnel-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+}
+.funnel-dot-blue { background-color: #2563EB; }
+.funnel-dot-green { background-color: #15803D; }
+.funnel-dot-red { background-color: #B91C1C; }
+.funnel-dot-gray { background-color: #94A3B8; }
+.funnel-badge-qty {
+    background: #FFFFFF;
+    border: 1px solid #CBD5E1;
+    color: var(--bench-midnight);
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+}
+.funnel-step-amount {
+    text-align: right;
+}
+.funnel-step-amount strong {
+    font-size: 13.5px;
+    display: block;
+}
+.funnel-step-amount small {
+    font-size: 10.5px;
+    color: #64748B;
+}
+.funnel-progress-track {
+    height: 6px;
+    background: #E2E8F0;
+    border-radius: 999px;
+    overflow: hidden;
+}
+.funnel-progress-fill {
+    height: 100%;
+    border-radius: 999px;
+    transition: width 0.6s ease;
+}
+.bg-blue { background-color: #2563EB; }
+.bg-green { background-color: #15803D; }
+.bg-red { background-color: #B91C1C; }
+.funnel-step-muted {
+    background: transparent;
+    border: 1px dashed #CBD5E1;
+    padding: 8px 14px;
+}
+
+/* BLOC 3 : Trésorerie & Encours */
+.cashflow-grid {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+@media (max-width: 950px) {
+    .cashflow-grid { grid-template-columns: 1fr; }
+}
+.cashflow-card {
+    background: #F8FAFC;
+    border: 1px solid var(--bench-border);
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+.card-subtitle {
+    font-size: 14.5px;
+    font-weight: 700;
+    color: var(--bench-midnight);
+    margin: 0 0 16px 0;
+}
+.cashflow-bar-container {
+    margin-bottom: 16px;
+}
+.cashflow-stacked-bar {
+    height: 20px;
+    border-radius: 6px;
+    overflow: hidden;
+    display: flex;
+    background: #E2E8F0;
+}
+.cashflow-seg-collected {
+    background: #15803D;
+    height: 100%;
+    transition: width 0.6s ease;
+}
+.cashflow-seg-pending {
+    background: var(--bench-midnight);
+    height: 100%;
+    transition: width 0.6s ease;
+}
+.cashflow-split-metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    border-top: 1px solid #E2E8F0;
+    padding-top: 14px;
+}
+.split-col span {
+    display: block;
+    font-size: 11.5px;
+    color: #64748B;
+    margin-bottom: 2px;
+}
+.split-val {
+    font-size: 18px;
+    font-weight: 800;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+.split-col small {
+    display: block;
+    font-size: 11px;
+    color: #64748B;
+}
+
+/* Santé du Poste Clients */
+.receivables-health-box {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+.health-col {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 10px;
+    padding: 14px;
+}
+.health-col-healthy { border-left: 3px solid #15803D; }
+.health-col-overdue { border-left: 3px solid #B91C1C; }
+.health-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.health-head strong { font-size: 12.5px; color: var(--bench-midnight); display: block; }
+.health-head small { font-size: 10.5px; color: #64748B; }
+.health-amount {
+    font-size: 18px;
+    font-weight: 800;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    margin-bottom: 6px;
+}
+.health-badge {
+    font-size: 11px;
+    font-weight: 600;
+    color: #15803D;
+    background: #F0FDF4;
+    padding: 2px 6px;
+    border-radius: 4px;
+    display: inline-block;
+}
+.health-badge-red {
+    color: #B91C1C;
+    background: #FEF2F2;
+}
+
+/* Aging Balance */
+.aging-box {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
+    padding: 12px 14px;
+}
+.aging-title {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #475569;
+    display: block;
+    margin-bottom: 8px;
+}
+.aging-bars {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+}
+.aging-pill {
+    padding: 6px 8px;
+    border-radius: 6px;
+    text-align: center;
+    border: 1px solid #E2E8F0;
+}
+.aging-pill small { display: block; font-size: 10px; color: #64748B; }
+.aging-pill strong { display: block; font-size: 12px; margin: 2px 0; }
+.aging-pill span { font-size: 10px; color: #94A3B8; }
+.aging-pill-30 { background: #F8FAFC; color: #1E293B; }
+.aging-pill-60 { background: #FEF3C7; color: #92400E; border-color: #FDE68A; }
+.aging-pill-90 { background: #FEE2E2; color: #991B1B; border-color: #FECACA; }
+
+/* Tableau Retards & Relance */
+.overdue-table-card {
+    background: #FFFFFF;
+    border: 1px solid #FECACA;
+    border-left: 4px solid #B91C1C;
+    border-radius: 10px;
+    padding: 18px;
+    margin-top: 14px;
+}
+.overdue-table-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+}
+.overdue-table-header h3 {
+    margin: 2px 0 0 0;
+    font-size: 16px;
+    color: var(--bench-midnight);
+}
+.badge-red-bold {
+    background: #FEF2F2;
+    color: #B91C1C;
+    border: 1px solid #FCA5A5;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 700;
+}
+.badge-delay {
+    background: #FEF2F2;
+    color: #B91C1C;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11.5px;
+    font-weight: 700;
+    display: inline-block;
+}
+
+/* Grille Activité Récente */
+.recent-activity-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 16px;
+}
+
+/* Pied de page Exécutif avec Slogan */
+.exec-footer {
+    margin-top: 16px;
+    padding-top: 14px;
+}
+.exec-footer-divider {
+    height: 1px;
+    background: linear-gradient(to right, transparent, var(--bench-gold), transparent);
+    margin-bottom: 20px;
+}
+.exec-footer-content {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 0 8px;
+}
+.exec-footer-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.exec-footer-mark {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: var(--bench-midnight);
+    color: var(--bench-gold);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 14px;
+    border: 1px solid var(--bench-gold);
+}
+.exec-footer-name {
+    display: block;
+    font-size: 12px;
+    letter-spacing: 0.6px;
+    color: var(--bench-midnight);
+}
+.exec-footer-meta {
+    font-size: 11px;
+    color: #64748B;
+}
+.exec-footer-slogan {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-style: italic;
+    color: var(--bench-midnight);
+    background: #FAF5E8;
+    padding: 6px 16px;
+    border-radius: 999px;
+    border: 1px solid #E5D5A8;
+    box-shadow: 0 1px 4px rgba(212, 175, 55, 0.1);
+}
+.slogan-quote {
+    color: var(--bench-gold-dark);
+    font-size: 14px;
+    font-weight: 700;
+}
+.slogan-text {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: var(--bench-midnight);
+}
+
+/* Couleurs utilitaires */
+.text-navy { color: var(--bench-midnight) !important; }
+.text-gold { color: var(--bench-gold-dark) !important; }
+.text-green { color: var(--bench-green) !important; }
+.text-red { color: var(--bench-red) !important; }
+.font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+.font-bold { font-weight: 700; }
+</style>
+{% endblock %}

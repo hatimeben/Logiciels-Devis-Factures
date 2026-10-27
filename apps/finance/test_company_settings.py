@@ -136,6 +136,8 @@ class CompanySettingsTests(TestCase):
         company.logo = self._dummy_image()
         company.save()
 
+        self.assertEqual(company.formatted_rib, "111 222 3334445556667778 88")
+
         # Test quote PDF
         quote = Quote.objects.create(customer=self.customer)
         quote_pdf_bytes = build_quote_pdf(quote)
@@ -154,4 +156,15 @@ class CompanySettingsTests(TestCase):
 
         invoice_pdf_bytes = build_invoice_pdf(invoice)
         self.assertTrue(invoice_pdf_bytes.startswith(b"%PDF-"))
+
+        # Test detail views display bank & formatted RIB
+        quote_response = self.client.get(reverse("quote-detail", args=[quote.pk]))
+        self.assertEqual(quote_response.status_code, 200)
+        self.assertContains(quote_response, "Banque Populaire")
+        self.assertContains(quote_response, "111 222 3334445556667778 88")
+
+        invoice_response = self.client.get(reverse("invoice-detail", args=[invoice.pk]))
+        self.assertEqual(invoice_response.status_code, 200)
+        self.assertContains(invoice_response, "Banque Populaire")
+        self.assertContains(invoice_response, "111 222 3334445556667778 88")
 

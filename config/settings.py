@@ -9,7 +9,7 @@ SECRET_KEY = os.environ.get(
     "django-insecure-benchtech-local-development-only",
 )
 DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
-ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "testserver"]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -49,6 +49,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "apps.finance.context_processors.company_settings",
             ],
         },
     },

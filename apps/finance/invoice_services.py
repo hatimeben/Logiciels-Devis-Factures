@@ -1,3 +1,4 @@
+from decimal import Decimal
 import time
 
 from django.core.exceptions import ValidationError
@@ -67,29 +68,64 @@ def _customer_snapshot(customer):
     }
 
 
-def _convert_quote_once(quote_id, actor):
+def _convert_quote_once(quote_id, actor, line_quantities=None, invoice_notes=None):
     with transaction.atomic():
-        quote = Quote.objects.select_related("customer", "project").get(pk=quote_id)
-        if quote.status != Quote.Status.ACCEPTED:
-            raise ValidationError("Seul un devis accepté peut être converti en facture.")
-        if Invoice.objects.filter(quote=quote).exists():
-            raise ValidationError("Ce devis a déjà été converti en facture.")
+        quote = (
+            Quote.objects.select_for_update()
+            .select_related("customer", "project")
+            .prefetch_related("lines__invoice_lines__invoice")
+            .get(pk=quote_id)
+        )
+        if quote.status not in (Quote.Status.ACCEPTED, Quote.Status.PARTIALLY_INVOICED):
+            if quote.status == Quote.Status.CONVERTED:
+                raise ValidationError("Toutes les prestations de ce devis ont déjà été intégralement facturées.")
+            raise ValidationError("Seul un devis accepté ou partiellement facturé peut être converti en facture.")
+
         source_lines = list(quote.lines.all())
         if not source_lines:
-            raise ValidationError("Le devis accepté ne contient aucune ligne.")
+            raise ValidationError("Le devis ne contient aucune ligne.")
+
+        # Calcul et validation des quantités à facturer
+        lines_to_bill = []
+        if line_quantities is not None:
+            # Facturation partielle ou sélective explicite
+            for line in source_lines:
+                qty_req = line_quantities.get(line.pk)
+                if qty_req is not None:
+                    qty_req = Decimal(str(qty_req))
+                    if qty_req > Decimal("0.000"):
+                        remaining = line.remaining_quantity
+                        if qty_req > remaining:
+                            raise ValidationError(
+                                f"La quantité demandée ({qty_req}) pour « {line.description} » "
+                                f"dépasse la quantité restante devisée ({remaining})."
+                            )
+                        lines_to_bill.append((line, qty_req))
+        else:
+            # Conversion complète des quantités restantes par défaut
+            for line in source_lines:
+                remaining = line.remaining_quantity
+                if remaining > Decimal("0.000"):
+                    lines_to_bill.append((line, remaining))
+
+        if not lines_to_bill:
+            raise ValidationError("Toutes les prestations de ce devis ont déjà été intégralement facturées.")
+
+        initial_status = quote.status
 
         invoice = Invoice.objects.create(
             quote=quote,
             customer=quote.customer,
             customer_snapshot=quote.customer_snapshot or _customer_snapshot(quote.customer),
             project=quote.project,
-            notes=quote.notes,
+            notes=invoice_notes if invoice_notes is not None else quote.notes,
         )
-        for line in source_lines:
+        for line, qty in lines_to_bill:
             invoice.lines.create(
+                quote_line=line,
                 service=line.service,
                 description=line.description,
-                quantity=line.quantity,
+                quantity=qty,
                 unit_price=line.unit_price,
                 discount_type=line.discount_type,
                 discount_value=line.discount_value,
@@ -99,21 +135,21 @@ def _convert_quote_once(quote_id, actor):
                 position=line.position,
             )
 
-        changed = Quote.objects.filter(
-            pk=quote.pk,
-            status=Quote.Status.ACCEPTED,
-        ).update(status=Quote.Status.CONVERTED, updated_at=timezone.now())
-        if changed != 1:
-            raise ValidationError("Le statut du devis a changé ; recommencez la conversion.")
+        # Synchronisation automatique du statut du devis (Partiellement ou Totalement facturé)
+        quote.sync_invoicing_status()
         quote.refresh_from_db()
+
         DocumentHistory.objects.create(
             quote=quote,
             event=DocumentHistory.Event.STATUS_CHANGED,
             actor=actor,
             snapshot={
-                "from_status": Quote.Status.ACCEPTED,
-                "to_status": Quote.Status.CONVERTED,
+                "from_status": initial_status,
+                "to_status": quote.status,
                 "invoice_id": invoice.pk,
+                "lines_billed": [
+                    {"quote_line_id": l.pk, "billed_qty": str(q)} for l, q in lines_to_bill
+                ],
                 "actor_username": actor.get_username(),
                 "document": {
                     "number": quote.number,
@@ -127,6 +163,7 @@ def _convert_quote_once(quote_id, actor):
             actor=actor,
             snapshot={
                 "source_quote_id": quote.pk,
+                "is_partial": quote.status == Quote.Status.PARTIALLY_INVOICED,
                 "after": invoice_snapshot(invoice),
                 "actor_username": actor.get_username(),
             },
@@ -134,10 +171,15 @@ def _convert_quote_once(quote_id, actor):
         return invoice
 
 
-def convert_quote_to_invoice(quote_id, actor):
+def convert_quote_to_invoice(quote_id, actor, line_quantities=None, invoice_notes=None):
     for attempt in range(5):
         try:
-            return _convert_quote_once(quote_id, actor)
+            return _convert_quote_once(
+                quote_id,
+                actor,
+                line_quantities=line_quantities,
+                invoice_notes=invoice_notes,
+            )
         except OperationalError as error:
             if "locked" not in str(error).lower() or attempt == 4:
                 raise

@@ -1,5 +1,5 @@
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
@@ -97,14 +97,37 @@ def invoice_create(request):
 
 
 @require_POST
+@require_POST
 @login_required
 @permission_required(
     ("finance.add_invoice", "finance.change_quote"),
     raise_exception=True,
 )
 def invoice_convert(request, quote_id):
+    quote = get_object_or_404(Quote, pk=quote_id)
+    line_quantities = None
+    invoice_notes = request.POST.get("invoice_notes")
+
+    # Si conversion partielle demandée via formulaire
+    if request.POST.get("is_partial") == "1":
+        line_quantities = {}
+        for line in quote.lines.all():
+            val_str = request.POST.get(f"qty_{line.pk}", "").strip().replace(",", ".")
+            if val_str:
+                try:
+                    qty_val = Decimal(val_str)
+                    if qty_val > Decimal("0.000"):
+                        line_quantities[line.pk] = qty_val
+                except (InvalidOperation, TypeError):
+                    pass
+
     try:
-        invoice = convert_quote_to_invoice(quote_id, request.user)
+        invoice = convert_quote_to_invoice(
+            quote_id,
+            request.user,
+            line_quantities=line_quantities,
+            invoice_notes=invoice_notes,
+        )
     except (Quote.DoesNotExist, ValidationError) as error:
         detail = (
             " ".join(error.messages)
@@ -112,8 +135,21 @@ def invoice_convert(request, quote_id):
             else "Le devis demandé n'existe pas."
         )
         messages.error(request, "Conversion impossible : " + detail)
-        return redirect("quote-list")
-    messages.success(request, "Le devis accepté a été copié dans une facture brouillon.")
+        return redirect("quote-detail", quote_id=quote_id)
+
+    quote.refresh_from_db()
+    if quote.status == Quote.Status.PARTIALLY_INVOICED:
+        messages.success(
+            request,
+            f"Facture partielle brouillon #{invoice.pk} créée avec succès pour le devis {quote.number}. "
+            "Vous pouvez modifier ou regrouper des prestations avant son émission officielle."
+        )
+    else:
+        messages.success(
+            request,
+            f"Facture brouillon #{invoice.pk} créée avec succès pour le devis {quote.number}. "
+            "Toutes les prestations restantes ont été intégrées."
+        )
     return redirect("invoice-detail", invoice_id=invoice.pk)
 
 

@@ -35,16 +35,15 @@ class FinanceModelTests(TestCase):
             amount=Decimal("100.00"),
         )
 
-    def test_a_quote_can_be_linked_to_only_one_invoice(self):
+    def test_a_quote_can_be_linked_to_multiple_invoices(self):
         quote = Quote.objects.create(customer=self.customer)
         Invoice.objects.bulk_create(
-            [Invoice(customer=self.customer, quote=quote)]
+            [
+                Invoice(customer=self.customer, quote=quote),
+                Invoice(customer=self.customer, quote=quote),
+            ]
         )
-
-        with self.assertRaises(IntegrityError), transaction.atomic():
-            Invoice.objects.bulk_create(
-                [Invoice(customer=self.customer, quote=quote)]
-            )
+        self.assertEqual(quote.invoices.count(), 2)
 
     def test_document_numbers_are_unique(self):
         Quote.objects.bulk_create(
