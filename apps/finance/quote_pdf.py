@@ -133,11 +133,17 @@ def build_quote_pdf(quote):
         author=f"{company.name} Gestion",
     )
     base = getSampleStyleSheet()
-    customer = quote.customer_snapshot or {
-        "name": quote.customer.name,
-        "address": quote.customer.address,
-        "city": quote.customer.city,
-    }
+    customer = dict(quote.customer_snapshot or {})
+    if not customer.get("name") and quote.customer:
+        customer["name"] = quote.customer.name
+    if not customer.get("address") and quote.customer:
+        customer["address"] = quote.customer.address
+    if not customer.get("city") and quote.customer:
+        customer["city"] = quote.customer.city
+    if not customer.get("ice") and quote.customer:
+        customer["ice"] = getattr(quote.customer, "ice", "")
+    if not customer.get("tax_identifier") and quote.customer:
+        customer["tax_identifier"] = getattr(quote.customer, "tax_identifier", "")
     styles = {
         "title": ParagraphStyle(
             "QuoteTitle",
@@ -221,6 +227,20 @@ def build_quote_pdf(quote):
         addr_city.append(escape(customer["city"]))
     if addr_city:
         client_elements.append(Paragraph("<br/>".join(addr_city), styles["muted"]))
+
+    fiscal_items = []
+    if customer.get("ice"):
+        fiscal_items.append(f"<b>ICE :</b> {escape(customer['ice'])}")
+    if customer.get("tax_identifier"):
+        fiscal_items.append(f"<b>IF :</b> {escape(customer['tax_identifier'])}")
+    if fiscal_items:
+        client_elements.append(Spacer(1, 1.2 * mm))
+        client_elements.append(
+            Paragraph(
+                " &nbsp;&nbsp;·&nbsp;&nbsp; ".join(fiscal_items),
+                ParagraphStyle("CustFiscal", parent=styles["body"], fontSize=8, leading=11, textColor=MIDNIGHT_BLUE)
+            )
+        )
 
     client_box = Table([[client_elements]], colWidths=[90 * mm])
     client_box.setStyle(TableStyle([
@@ -347,20 +367,22 @@ def build_quote_pdf(quote):
         summary_rows = [
             ["Total brut HT", _money(totals["gross"])],
             ["Remises", f"- {_money(totals['discount'])}"],
-            ["Total net HT", _money(totals["net"])],
+            ["Total Net HT", _money(totals["net"])],
         ]
     else:
         summary_rows = [
             ["Total HT", _money(totals["net"])],
         ]
-    for tax_name, tax_amount in _tax_totals(quote):
-        summary_rows.append([f"Taxe - {tax_name}", _money(tax_amount)])
-    summary_rows.append(["Total TTC", _money(totals["total"])])
+    tax_items = _tax_totals(quote)
+    for tax_name, tax_amount in tax_items:
+        summary_rows.append([f"TVA indicative ({tax_name})", _money(tax_amount)])
+    if tax_items:
+        summary_rows.append(["Total TTC (indicatif)", _money(totals["total"])])
     summary = Table(
         [
             [
                 Paragraph(escape(label), styles["body"]),
-                Paragraph(escape(amount), styles["summary"] if label == "Total TTC" else styles["body"]),
+                Paragraph(escape(amount), styles["summary"] if label in {"Total HT", "Total Net HT"} else styles["body"]),
             ]
             for label, amount in summary_rows
         ],
@@ -441,6 +463,61 @@ def build_quote_pdf(quote):
             Spacer(1, 6 * mm),
             bank_table,
         ])
+
+    # Bloc de signature & Cachet d'entreprise
+    client_sign_content = [
+        Paragraph(
+            f"<b><font color='{MIDNIGHT_BLUE.hexval()}'>BON POUR ACCORD & COMMANDE</font></b>",
+            ParagraphStyle("ClientSignHead", parent=styles["body"], fontSize=8, leading=10),
+        ),
+        Paragraph(
+            f"<font color='{MUTED.hexval()}'>Date, Cachet et Signature du Client :<br/><i>« Bon pour accord »</i></font>",
+            ParagraphStyle("ClientSignSub", parent=styles["body"], fontSize=7, leading=9),
+        ),
+        Spacer(1, 14 * mm),
+    ]
+
+    company_sign_content = [
+        Paragraph(
+            f"<b><font color='{MIDNIGHT_BLUE.hexval()}'>POUR {escape(company.name.upper())}</font></b>",
+            ParagraphStyle("CompSignHead", parent=styles["body"], fontSize=8, leading=10),
+        ),
+        Paragraph(
+            f"<font color='{MUTED.hexval()}'>Cachet officiel & Signature autorisée :</font>",
+            ParagraphStyle("CompSignSub", parent=styles["body"], fontSize=7, leading=9),
+        ),
+    ]
+
+    stamp_path = company.stamp.path if (company.stamp and os.path.exists(company.stamp.path)) else None
+    if stamp_path:
+        company_sign_content.append(Spacer(1, 1 * mm))
+        company_sign_content.append(Image(stamp_path, width=46 * mm, height=23 * mm))
+    else:
+        company_sign_content.append(Spacer(1, 14 * mm))
+
+    sign_table = Table(
+        [[client_sign_content, company_sign_content]],
+        colWidths=[85 * mm, 85 * mm],
+    )
+    sign_table.setStyle(
+        TableStyle([
+            ("BACKGROUND", (0, 0), (0, 0), PALE),
+            ("BACKGROUND", (1, 0), (1, 0), PALE),
+            ("BOX", (0, 0), (0, 0), 0.5, GRID),
+            ("BOX", (1, 0), (1, 0), 0.5, GRID),
+            ("LINEBEFORE", (0, 0), (0, 0), 2.0, GOLD),
+            ("LINEBEFORE", (1, 0), (1, 0), 2.0, GOLD),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ])
+    )
+    story.extend([
+        Spacer(1, 6 * mm),
+        sign_table,
+    ])
 
     def draw_page(canvas, document):
         canvas.saveState()

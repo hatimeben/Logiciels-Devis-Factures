@@ -17,9 +17,12 @@ from apps.partners.models import Customer
 from .models import DocumentHistory, Invoice, Quote
 from .quote_calculations import calculate_quote_totals
 from .quote_forms import QuoteForm, QuoteLineFormSet
+from .document_filename import get_document_download_filename
+from .quote_docx import build_quote_docx
 from .quote_pdf import build_quote_pdf
 from .quote_services import (
     change_quote_status,
+    clone_quote,
     create_quote_revision,
     save_quote_draft,
     send_quote,
@@ -138,15 +141,27 @@ def quote_detail(request, quote_id):
         line.discount_value and line.discount_value > Decimal("0.00")
         for line in lines
     )
-    customer_snapshot = quote.customer_snapshot or {
-        "name": quote.customer.name,
-        "email": quote.customer.email,
-        "phone": quote.customer.phone,
-        "address": quote.customer.address,
-        "city": quote.customer.city,
-        "country": quote.customer.country,
-        "tax_identifier": quote.customer.tax_identifier,
-    }
+    customer_snapshot = dict(quote.customer_snapshot or {})
+    if not customer_snapshot.get("name") and quote.customer:
+        customer_snapshot["name"] = quote.customer.name
+    if not customer_snapshot.get("email") and quote.customer:
+        customer_snapshot["email"] = quote.customer.email
+    if not customer_snapshot.get("phone") and quote.customer:
+        customer_snapshot["phone"] = quote.customer.phone
+    if not customer_snapshot.get("address") and quote.customer:
+        customer_snapshot["address"] = quote.customer.address
+    if not customer_snapshot.get("city") and quote.customer:
+        customer_snapshot["city"] = quote.customer.city
+    if not customer_snapshot.get("country") and quote.customer:
+        customer_snapshot["country"] = quote.customer.country
+    if not customer_snapshot.get("ice") and quote.customer:
+        customer_snapshot["ice"] = getattr(quote.customer, "ice", "")
+    if not customer_snapshot.get("tax_identifier") and quote.customer:
+        customer_snapshot["tax_identifier"] = getattr(quote.customer, "tax_identifier", "")
+
+    if quote.customer and quote.customer.ice and not (quote.customer_snapshot or {}).get("ice"):
+        quote.customer_snapshot = customer_snapshot
+        quote.save(update_fields=["customer_snapshot"])
     for line in lines:
         line.amounts = calculate_quote_totals([line])
     history = DocumentHistory.objects.filter(quote=quote).select_related("actor")
@@ -162,9 +177,11 @@ def quote_detail(request, quote_id):
             "has_discount": has_discount,
             "history": history,
             "linked_invoices": linked_invoices,
+            "customers": Customer.objects.filter(is_active=True).order_by("name"),
             "today": timezone.localdate(),
             "can_edit": request.user.has_perm("finance.change_quote"),
             "can_add": request.user.has_perm("finance.add_quote"),
+            "can_delete": request.user.has_perm("finance.delete_quote"),
             "can_convert": (
                 quote.status in (Quote.Status.ACCEPTED, Quote.Status.PARTIALLY_INVOICED)
                 and request.user.has_perm("finance.add_invoice")
@@ -219,6 +236,26 @@ def quote_revision(request, quote_id):
     return redirect("quote-edit", quote_id=quote.pk)
 
 
+@require_POST
+@login_required
+@permission_required("finance.add_quote", raise_exception=True)
+def quote_clone(request, quote_id):
+    target_customer_id = request.POST.get("customer_id")
+    if not target_customer_id:
+        messages.error(request, "Veuillez sélectionner un client pour la duplication.")
+        return redirect("quote-detail", quote_id=quote_id)
+    try:
+        new_quote = clone_quote(quote_id, target_customer_id, request.user)
+    except Exception as error:
+        messages.error(request, f"Erreur lors de la duplication du devis : {error}")
+        return redirect("quote-detail", quote_id=quote_id)
+    messages.success(
+        request,
+        f"Le devis a été dupliqué avec succès sous forme de brouillon pour le client « {new_quote.customer.name} »."
+    )
+    return redirect("quote-detail", quote_id=new_quote.pk)
+
+
 @login_required
 @permission_required("finance.view_quote", raise_exception=True)
 def quote_pdf(request, quote_id):
@@ -230,6 +267,43 @@ def quote_pdf(request, quote_id):
     )
     content = build_quote_pdf(quote)
     response = HttpResponse(content, content_type="application/pdf")
-    filename = quote.number or f"devis-brouillon-{quote.pk}"
+    filename = get_document_download_filename(quote, doc_type="devis")
     response["Content-Disposition"] = f'attachment; filename="{filename}.pdf"'
     return response
+
+
+@login_required
+@permission_required("finance.view_quote", raise_exception=True)
+def quote_docx(request, quote_id):
+    quote = get_object_or_404(
+        Quote.objects.select_related("customer", "project", "revision_of").prefetch_related(
+            "lines"
+        ),
+        pk=quote_id,
+    )
+    content = build_quote_docx(quote)
+    response = HttpResponse(
+        content,
+        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+    filename = get_document_download_filename(quote, doc_type="devis")
+    response["Content-Disposition"] = f'attachment; filename="{filename}.docx"'
+    return response
+
+
+@require_POST
+@login_required
+@permission_required("finance.delete_quote", raise_exception=True)
+def quote_delete(request, quote_id):
+    quote = get_object_or_404(Quote, pk=quote_id)
+    if quote.status != Quote.Status.DRAFT:
+        messages.error(
+            request,
+            "Un devis envoyé ou émis ne peut pas être supprimé. "
+            "Vous pouvez le marquer comme Refusé ou Annulé pour préserver la traçabilité."
+        )
+        return redirect("quote-detail", quote_id=quote.pk)
+    pk_deleted = quote.pk
+    quote.delete()
+    messages.success(request, f"Le devis brouillon #{pk_deleted} a été supprimé avec succès.")
+    return redirect("quote-list")

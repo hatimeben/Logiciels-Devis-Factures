@@ -4,7 +4,14 @@
 {% block content %}
 <div class="page-heading">
     <div>
-        <p class="eyebrow">DÉPENSE · {{ expense.payment_status|upper }}</p>
+        <p class="eyebrow">
+            DÉPENSE · {{ expense.payment_status|upper }}
+            {% if expense.has_fiscal_reintegration %}
+                · <span style="color: #b45309; font-weight: 700;">⚠️ RÉINTÉGRATION FISCALE IS ({{ expense.fiscal_reintegration_amount|money }} MAD)</span>
+            {% else %}
+                · <span style="color: #15803d; font-weight: 600;">✓ DÉDUCTIBLE IS</span>
+            {% endif %}
+        </p>
         <h1>{{ expense.description }}</h1>
         <p class="subheading">Catégorie : {{ expense.category.name }}{% if expense.supplier %} · Fournisseur : {{ expense.supplier.name }}{% endif %}</p>
     </div>
@@ -18,6 +25,24 @@
         {% endif %}
     </div>
 </div>
+
+{% if expense.has_fiscal_reintegration %}
+<div class="panel" style="background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #d97706; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px;">
+        <div style="display: flex; align-items: center; gap: 8px; font-weight: 700; color: #92400e; font-size: 15px;">
+            <span>⚠️</span> <span>TRAITEMENT FISCAL : CHARGE NON DÉDUCTIBLE (IS)</span>
+        </div>
+        <span style="background: #fee2e2; color: #991b1b; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 700;">
+            À réintégrer : {{ expense.fiscal_reintegration_amount|money }} MAD
+        </span>
+    </div>
+    <p style="margin: 0; font-size: 13.5px; color: #78350f; line-height: 1.5;">
+        <strong>Motif légal CGI :</strong> {{ expense.effective_reintegration_reason }}.<br>
+        Cette charge est comptabilisée en classe 6 mais fera l'objet d'une réintégration extra-comptable sur le Tableau N°3 de la liasse fiscale annuelle lors du calcul de l'Impôt sur les Sociétés (IS).
+        {% if expense.fiscal_notes %}<br><strong>Observation fiduciaire :</strong> {{ expense.fiscal_notes }}{% endif %}
+    </p>
+</div>
+{% endif %}
 
 <section class="summary-grid">
     <article class="panel summary-card">
@@ -54,6 +79,69 @@
     </article>
 </section>
 
+<!-- Ventilation Comptable & Fiscale (PCGE Maroc) -->
+<section class="panel" style="margin-bottom: 24px; padding: 18px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;">
+        <h3 style="font-size: 1rem; font-weight: 700; color: #0f172a; margin: 0;">
+            📊 Ventilation Comptable & Déductibilité TVA (PCGE Maroc)
+        </h3>
+        <span class="badge" style="background: #f1f5f9; color: #334155; font-size: 0.85rem; padding: 4px 10px;">
+            Compte PCGE : <strong>{{ expense.category.pcge_account }}</strong> ({{ expense.category.name }})
+        </span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px;">
+        <div style="background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
+            <div style="font-size: 0.8rem; color: #64748b; font-weight: 600;">Montant Net HT</div>
+            <div style="font-size: 1.15rem; font-weight: 700; color: #0f172a;">{{ expense.base_ht|money }} MAD</div>
+            <small style="color: #94a3b8;">Base de la charge</small>
+        </div>
+        <div style="background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
+            <div style="font-size: 0.8rem; color: #64748b; font-weight: 600;">TVA Récupérable (34552)</div>
+            <div style="font-size: 1.15rem; font-weight: 700; color: {% if expense.vat_amount > 0 %}#2563eb{% else %}#64748b{% endif %};">
+                {{ expense.vat_amount|money }} MAD
+            </div>
+            <small style="color: #94a3b8;">Taux appliqué : {{ expense.effective_tax_rate|floatformat:0 }} %</small>
+        </div>
+        <div style="background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
+            <div style="font-size: 0.8rem; color: #64748b; font-weight: 600;">Statut Fiscal TVA</div>
+            <div style="margin-top: 4px;">
+                {% if not expense.effective_is_vat_recoverable %}
+                    <span style="font-size: 0.8rem; font-weight: 700; padding: 3px 8px; border-radius: 4px; background: #fee2e2; color: #991b1b;">
+                        {{ expense.vat_status_label }}
+                    </span>
+                {% else %}
+                    <span style="font-size: 0.8rem; font-weight: 700; padding: 3px 8px; border-radius: 4px; background: #ecfdf5; color: #065f46;">
+                        {{ expense.vat_status_label }}
+                    </span>
+                {% endif %}
+            </div>
+            <small style="color: #94a3b8;">Article 106 CGI</small>
+        </div>
+        <div style="background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
+            <div style="font-size: 0.8rem; color: #64748b; font-weight: 600;">Déductibilité IS (Résultat)</div>
+            <div style="margin-top: 4px;">
+                {% if expense.is_tax_deductible %}
+                    <span style="font-size: 0.8rem; font-weight: 700; padding: 3px 8px; border-radius: 4px; background: #ecfdf5; color: #065f46;">
+                        ✓ Déductible à l'IS (Art. 10)
+                    </span>
+                {% else %}
+                    <span style="font-size: 0.8rem; font-weight: 700; padding: 3px 8px; border-radius: 4px; background: #fff1f2; color: #be123c;">
+                        ⚠️ À réintégrer (Tab. 3)
+                    </span>
+                {% endif %}
+            </div>
+            <small style="color: #94a3b8;">Liasse fiscale</small>
+        </div>
+    </div>
+
+    {% if expense.category.pcge_account == "61251" or "carburant" in expense.category.name|lower %}
+    <div style="margin-top: 12px; font-size: 0.85rem; color: #854d0e; background: #fefce8; padding: 8px 12px; border-radius: 6px; border: 1px solid #fef08a;">
+        ⛽ <strong>Règle Carburant :</strong> Conformément à l'Article 106-I-2° du CGI marocain, la TVA payée sur le carburant n'est pas récupérable. Le montant total (<strong>{{ expense.amount|money }} MAD TTC</strong>) est comptabilisé directement en charge d'exploitation déductible de votre bénéfice IS.
+    </div>
+    {% endif %}
+</section>
+
 <!-- Règlements fournisseurs -->
 <section class="panel table-panel">
     <div class="section-heading">
@@ -78,7 +166,12 @@
                     {% for p in payments %}
                         <tr>
                             <td>{{ p.payment_date|date:"d/m/Y" }}</td>
-                            <td>{{ p.get_method_display }}</td>
+                            <td>
+                                {{ p.get_method_display }}
+                                {% if p.is_cash_over_ceiling %}
+                                    <span class="tag-cash-warning" style="background: #fef3c7; color: #b45309; font-weight: 700; font-size: 11px; padding: 2px 6px; border-radius: 4px; border: 1px solid #fde68a;" title="Article 11-II CGI : Excédent non déductible de {{ p.cash_excess_amount|money }} MAD">⚠️ &gt; 5k</span>
+                                {% endif %}
+                            </td>
                             <td>{{ p.reference|default:"—" }}</td>
                             <td>{{ p.notes|default:"—" }}</td>
                             <td class="numeric"><strong>{{ p.amount|money }} MAD</strong></td>

@@ -12,6 +12,7 @@ class CompanySettingsForm(forms.ModelForm):
             "legal_form",
             "capital",
             "logo",
+            "stamp",
             "ice",
             "tax_identifier",
             "trade_registry",

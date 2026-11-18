@@ -54,16 +54,26 @@ def classify_activity_pole(
     service_category_name: Optional[str] = None,
     service_name: Optional[str] = None,
     description: Optional[str] = None,
+    is_article: bool = False,
+    article=None,
 ) -> Dict[str, Any]:
     """
-    Règle décisionnelle de classification automatique d'une prestation
-    parmi les trois pôles stratégiques de BenchTech.
+    Règle décisionnelle de classification automatique d'une prestation ou vente
+    parmi les trois pôles stratégiques de BenchTech :
+    1. Vente de matériel informatique (Articles du stock / marchandises physiques ou matériel IT)
+    2. Formation professionnelle en informatique
+    3. Conseil en technologies & IA
     """
+    # 1. Priorité absolue : Tout article physique du stock (compte 3111/Marchandise)
+    # relève immédiatement du pôle "Vente de matériel informatique"
+    if is_article or article is not None:
+        return POLE_MATERIEL
+
     corpus = " ".join(
         filter(None, [service_category_name, service_name, description])
     ).lower()
 
-    # 1. Formation professionnelle
+    # 2. Formation professionnelle
     formation_markers = [
         "formation", "atelier", "workshop", "coaching", "training",
         "cours", "séminaire", "seminaire", "certif", "pédagogique", "pedagogique"
@@ -71,16 +81,21 @@ def classify_activity_pole(
     if any(marker in corpus for marker in formation_markers):
         return POLE_FORMATION
 
-    # 2. Vente de matériel informatique
+    # 3. Vente de matériel informatique (mots-clés pour lignes libres ou matériels)
     hardware_markers = [
         "matériel", "materiel", "équipement", "equipement", "ordinateur", "serveur",
         "switch", "routeur", "écran", "ecran", "pc", "laptop", "imprimante", "hardware",
-        "disque", "ram", "rack", "onduleur", "câble", "cable", "périphérique", "peripherique"
+        "disque", "ram", "rack", "onduleur", "câble", "cable", "périphérique", "peripherique",
+        "camera", "caméra", "imou", "dahua", "hikvision", "vidéosurveillance", "videosurveillance",
+        "souris", "clavier", "ssd", "hdd", "nvme", "carte", "boîtier", "boitier", "composant",
+        "accessoire", "webcam", "micro", "casque", "audio", "usb", "chargeur", "adaptateur",
+        "hub", "toner", "cartouche", "modem", "wifi", "borne", "point d'accès", "fourniture",
+        "marchandise", "stock"
     ]
     if any(marker in corpus for marker in hardware_markers):
         return POLE_MATERIEL
 
-    # 3. Conseil en technologies & IA (cœur de métier / défaut pour prestations d'ingénierie, dev, cloud, IA)
+    # 4. Conseil en technologies & IA (cœur de métier / défaut pour prestations d'ingénierie, dev, cloud, IA)
     return POLE_CONSEIL_IA
 
 
@@ -93,7 +108,7 @@ def get_revenue_by_activity() -> Dict[str, Any]:
     # Factures émises et non annulées (CA effectif)
     invoices = (
         Invoice.objects.exclude(status__in=[Invoice.Status.DRAFT, Invoice.Status.CANCELLED])
-        .prefetch_related("lines__service__category")
+        .prefetch_related("lines__service__category", "lines__article")
     )
 
     poles_data = {
@@ -141,7 +156,14 @@ def get_revenue_by_activity() -> Dict[str, Any]:
                 else ""
             )
             srv_name = line.service.name if line.service else ""
-            pole = classify_activity_pole(cat_name, srv_name, line.description)
+            is_art = bool(getattr(line, "article_id", None) or getattr(line, "article", None))
+            pole = classify_activity_pole(
+                service_category_name=cat_name,
+                service_name=srv_name,
+                description=line.description,
+                is_article=is_art,
+                article=getattr(line, "article", None),
+            )
             key = pole["key"]
 
             poles_data[key]["net_ht"] += amounts["net"]

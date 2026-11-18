@@ -1,0 +1,168 @@
+{% extends "finance/quotes/base.html" %}
+{% load static %}
+
+{% block title %}Gestion des Stocks & Marchandises{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">LOGISTIQUE · FLUX PHYSIQUES & PCGE MAROC</p>
+        <h1>Gestion des Stocks & Marchandises</h1>
+        <p class="subheading">Supervision en temps réel des stocks, valorisation à l'achat et automatisation des entrées/sorties.</p>
+    </div>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <a class="button secondary" href="{% url 'stock-movements' %}">📑 Journal des mouvements</a>
+        <a class="button secondary" href="{% url 'stock-quick-cash-sale' %}" title="Facturation rapide au particulier ou vente comptant">⚡ Vente Comptant</a>
+        <a class="button secondary" href="{% url 'stock-article-create' %}">＋ Nouvel Article</a>
+        <a class="button primary" style="background: #059669; border-color: #059669;" href="{% url 'stock-reception' %}">📥 Réceptionner du stock</a>
+    </div>
+</div>
+
+<!-- KPI Cards (Zoho Inventory & Odoo Style) -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px;">
+    <!-- KPI 1 : Valeur totale -->
+    <div class="panel" style="padding: 18px; border-left: 4px solid #2563eb; background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);">
+        <span style="font-size: 0.8rem; text-transform: uppercase; font-weight: 700; color: #64748b; letter-spacing: 0.05em;">Valeur du Stock (HT)</span>
+        <div style="font-size: 1.7rem; font-weight: 800; color: #0f172a; margin-top: 6px;">{{ valeur_totale_stock|floatformat:2 }} <small style="font-size: 0.9rem; font-weight: 600; color: #64748b;">MAD</small></div>
+        <small style="color: #64748b; font-size: 0.78rem;">Au coût d'achat unitaire (PUMP)</small>
+    </div>
+
+    <!-- KPI 2 : Nombre de références -->
+    <div class="panel" style="padding: 18px; border-left: 4px solid #0f172a; background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);">
+        <span style="font-size: 0.8rem; text-transform: uppercase; font-weight: 700; color: #64748b; letter-spacing: 0.05em;">Références Actives</span>
+        <div style="font-size: 1.7rem; font-weight: 800; color: #0f172a; margin-top: 6px;">{{ total_articles }} <small style="font-size: 0.9rem; font-weight: 600; color: #64748b;">articles</small></div>
+        <small style="color: #64748b; font-size: 0.78rem;">Catalogue marchandises (PCGE 3111)</small>
+    </div>
+
+    <!-- KPI 3 : Sous seuil d'alerte -->
+    <div class="panel" style="padding: 18px; border-left: 4px solid #d97706; background: linear-gradient(135deg, #ffffff 0%, #fffbeb 100%);">
+        <span style="font-size: 0.8rem; text-transform: uppercase; font-weight: 700; color: #b45309; letter-spacing: 0.05em;">Seuil d'Alerte Atteint</span>
+        <div style="font-size: 1.7rem; font-weight: 800; color: #b45309; margin-top: 6px;">{{ articles_alerte_count }}</div>
+        <small style="color: #92400e; font-size: 0.78rem;">Réapprovisionnement conseillé</small>
+    </div>
+
+    <!-- KPI 4 : En rupture -->
+    <div class="panel" style="padding: 18px; border-left: 4px solid #dc2626; background: linear-gradient(135deg, #ffffff 0%, #fef2f2 100%);">
+        <span style="font-size: 0.8rem; text-transform: uppercase; font-weight: 700; color: #dc2626; letter-spacing: 0.05em;">Ruptures de Stock</span>
+        <div style="font-size: 1.7rem; font-weight: 800; color: #dc2626; margin-top: 6px;">{{ articles_rupture_count }}</div>
+        <small style="color: #991b1b; font-size: 0.78rem;">Stock épuisé (&le; 0 unité)</small>
+    </div>
+</div>
+
+<!-- Filtres & Barre de recherche -->
+<section class="panel filter-panel" style="margin-bottom: 20px;">
+    <form method="get" class="filters" style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
+        <label class="search-field" style="flex: 1; min-width: 250px;">
+            <span>Rechercher un article</span>
+            <input type="search" name="q" value="{{ q }}" placeholder="Référence, désignation ou description...">
+        </label>
+        <label>
+            <span>État du stock</span>
+            <select name="status" onchange="this.form.submit()">
+                <option value="all" {% if status_filter == 'all' %}selected{% endif %}>Tous les articles</option>
+                <option value="in_stock" {% if status_filter == 'in_stock' %}selected{% endif %}>En stock disponible</option>
+                <option value="alert" {% if status_filter == 'alert' %}selected{% endif %}>Alerte seuil bas</option>
+                <option value="out_of_stock" {% if status_filter == 'out_of_stock' %}selected{% endif %}>Rupture de stock</option>
+            </select>
+        </label>
+        <button class="button secondary" type="submit">Filtrer</button>
+        {% if q or status_filter != 'all' %}
+            <a class="button quiet" href="{% url 'stock-dashboard' %}">Réinitialiser</a>
+        {% endif %}
+    </form>
+</section>
+
+<!-- Table des Articles & Stocks -->
+<section class="panel table-panel">
+    {% if articles %}
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Référence</th>
+                        <th>Désignation</th>
+                        <th>Compte PCGE</th>
+                        <th class="numeric">Prix Achat HT</th>
+                        <th class="numeric">Prix Vente HT</th>
+                        <th class="numeric">Marge (%)</th>
+                        <th style="text-align: center;">Stock Disponible</th>
+                        <th class="numeric">Seuil Alerte</th>
+                        <th class="numeric">Valeur Stock HT</th>
+                        <th style="text-align: right;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for article in articles %}
+                        <tr>
+                            <td>
+                                <strong>{{ article.reference }}</strong>
+                            </td>
+                            <td>
+                                <div>{{ article.designation }}</div>
+                                {% if article.description %}
+                                    <small style="color: #64748b;">{{ article.description|truncatewords:6 }}</small>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span style="font-size: 0.8rem; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-family: monospace;">
+                                    {{ article.compte_stock }}
+                                </span>
+                            </td>
+                            <td class="numeric">{{ article.prix_achat_ht|floatformat:2 }} MAD</td>
+                            <td class="numeric"><strong>{{ article.prix_vente_ht|floatformat:2 }} MAD</strong></td>
+                            <td class="numeric">
+                                <span style="color: {% if article.taux_marge >= 25 %}#16a34a{% elif article.taux_marge > 0 %}#d97706{% else %}#dc2626{% endif %}; font-weight: 600;">
+                                    +{{ article.taux_marge }}%
+                                </span>
+                            </td>
+                            <td style="text-align: center;">
+                                {% if article.en_rupture %}
+                                    <span style="background-color: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; padding: 4px 10px; border-radius: 12px; font-weight: 700; font-size: 0.85rem;">
+                                        ⚠️ 0.00 (Rupture)
+                                    </span>
+                                {% elif article.sous_alerte %}
+                                    <span style="background-color: #fef3c7; color: #b45309; border: 1px solid #fcd34d; padding: 4px 10px; border-radius: 12px; font-weight: 700; font-size: 0.85rem;">
+                                        ⚡ {{ article.stock_actuel|floatformat:2 }} (Alerte)
+                                    </span>
+                                {% else %}
+                                    <span style="background-color: #dcfce7; color: #15803d; border: 1px solid #86efac; padding: 4px 10px; border-radius: 12px; font-weight: 700; font-size: 0.85rem;">
+                                        ✓ {{ article.stock_actuel|floatformat:2 }}
+                                    </span>
+                                {% endif %}
+                            </td>
+                            <td class="numeric" style="color: #64748b;">{{ article.stock_alerte|floatformat:2 }}</td>
+                            <td class="numeric" style="font-weight: 700; color: #0f172a;">
+                                {{ article.valeur_stock_ht|floatformat:2 }} MAD
+                            </td>
+                            <td style="text-align: right;">
+                                <div style="display: flex; gap: 4px; justify-content: flex-end;">
+                                    <a class="button quiet" style="padding: 4px 8px; font-size: 0.8rem; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0;" href="{% url 'stock-reception' %}?article_id={{ article.pk }}" title="Enregistrer une réception pour cet article">
+                                        + Réceptionner
+                                    </a>
+                                    <a class="button quiet" style="padding: 4px 8px; font-size: 0.8rem;" href="{% url 'stock-movements' %}?article_id={{ article.pk }}" title="Historique des mouvements">
+                                        Mouvements
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div style="text-align: center; padding: 48px 16px;">
+            <p style="font-size: 2.5rem; margin-bottom: 8px;">📦</p>
+            <h3>Aucun article trouvé</h3>
+            <p style="color: #64748b; margin-bottom: 16px;">
+                {% if q or status_filter != 'all' %}
+                    Aucun article ne correspond à vos filtres de recherche.
+                {% else %}
+                    Votre catalogue de marchandises physiques est actuellement vide.
+                {% endif %}
+            </p>
+            <a class="button primary" href="{% url 'stock-article-create' %}">＋ Créer un premier article</a>
+        </div>
+    {% endif %}
+</section>
+{% endblock %}
+

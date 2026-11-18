@@ -637,3 +637,189 @@ class ConcurrentQuoteNumberTests(TransactionTestCase):
 
         self.assertEqual(len(set(numbers)), 2)
         self.assertTrue(all(number.startswith(f"DEV-{timezone.localdate().year}-") for number in numbers))
+
+
+class QuoteDocxExportTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="docxuser", password="password123"
+        )
+        for codename in ["view_quote", "add_quote", "change_quote"]:
+            self.user.user_permissions.add(Permission.objects.get(codename=codename))
+        self.client = Client()
+        self.client.login(username="docxuser", password="password123")
+
+        self.customer = Customer.objects.create(
+            name="Société Alpha SARL",
+            city="Casablanca",
+            address="12 Boulevard Zerktouni",
+            tax_identifier="ICE-00123456789",
+        )
+        self.quote = Quote.objects.create(customer=self.customer)
+        QuoteLine.objects.create(
+            quote=self.quote,
+            description="Audit & Conseil Technique",
+            quantity=Decimal("2.000"),
+            unit_price=Decimal("4500.00"),
+            discount_type="percentage",
+            discount_value=Decimal("10.00"),
+        )
+
+    def test_build_quote_docx_generates_valid_document(self):
+        from io import BytesIO
+        import docx
+        from apps.finance.quote_docx import build_quote_docx
+
+        docx_bytes = build_quote_docx(self.quote)
+        self.assertTrue(len(docx_bytes) > 0)
+
+        # Vérification qu'il s'agit d'un fichier Word docx valide
+        doc = docx.Document(BytesIO(docx_bytes))
+        full_text = " ".join([p.text for p in doc.paragraphs])
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    full_text += " " + cell.text
+
+        self.assertIn("DEVIS", full_text)
+        self.assertIn("Société Alpha SARL", full_text)
+        self.assertIn("Audit & Conseil Technique", full_text)
+        self.assertIn("Total Net HT", full_text)
+        self.assertIn("8 100,00 MAD", full_text)
+
+        # Vérification du pied de page et des mentions légales
+        footer_text = ""
+        for s in doc.sections:
+            for p in s.footer.paragraphs:
+                footer_text += " " + p.text
+            for t in s.footer.tables:
+                for row in t.rows:
+                    for cell in row.cells:
+                        footer_text += " " + cell.text
+        from apps.finance.models import CompanySettings
+        company = CompanySettings.get_settings()
+        self.assertIn(company.name, footer_text)
+
+    def test_quote_docx_view_returns_docx_download(self):
+        response = self.client.get(reverse("quote-docx", args=[self.quote.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response["Content-Type"],
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+        self.assertIn(f"devis-brouillon-{self.quote.pk}.docx", response["Content-Disposition"])
+
+    def test_quote_detail_contains_docx_button(self):
+        response = self.client.get(reverse("quote-detail", args=[self.quote.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, reverse("quote-docx", args=[self.quote.pk]))
+        self.assertContains(response, "Télécharger Word (.docx)")
+
+    def test_issued_quote_filename_includes_designation(self):
+        from apps.finance.quote_services import send_quote
+        send_quote(self.quote.pk, self.user)
+        self.quote.refresh_from_db()
+
+        # PDF download filename
+        res_pdf = self.client.get(reverse("quote-pdf", args=[self.quote.pk]))
+        self.assertEqual(res_pdf.status_code, 200)
+        self.assertIn(f'{self.quote.number} Audit & Conseil Technique.pdf', res_pdf["Content-Disposition"])
+
+        # Word download filename
+        res_docx = self.client.get(reverse("quote-docx", args=[self.quote.pk]))
+        self.assertEqual(res_docx.status_code, 200)
+        self.assertIn(f'{self.quote.number} Audit & Conseil Technique.docx', res_docx["Content-Disposition"])
+
+
+class QuoteDeleteTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="deleteuser", password="password123"
+        )
+        for codename in ["view_quote", "add_quote", "change_quote", "delete_quote"]:
+            self.user.user_permissions.add(Permission.objects.get(codename=codename))
+        self.client = Client()
+        self.client.login(username="deleteuser", password="password123")
+
+        self.customer = Customer.objects.create(name="Client Deletion Test")
+        self.draft_quote = Quote.objects.create(customer=self.customer)
+        QuoteLine.objects.create(
+            quote=self.draft_quote,
+            description="Ligne à supprimer",
+            quantity=Decimal("1.000"),
+            unit_price=Decimal("100.00"),
+        )
+
+    def test_delete_draft_quote_succeeds(self):
+        quote_pk = self.draft_quote.pk
+        response = self.client.post(reverse("quote-delete", args=[quote_pk]))
+        self.assertRedirects(response, reverse("quote-list"))
+        self.assertFalse(Quote.objects.filter(pk=quote_pk).exists())
+
+    def test_delete_sent_quote_is_blocked(self):
+        send_quote(self.draft_quote.pk, self.user)
+        self.draft_quote.refresh_from_db()
+        self.assertEqual(self.draft_quote.status, Quote.Status.SENT)
+
+        response = self.client.post(reverse("quote-delete", args=[self.draft_quote.pk]))
+        self.assertRedirects(response, reverse("quote-detail", args=[self.draft_quote.pk]))
+        self.assertTrue(Quote.objects.filter(pk=self.draft_quote.pk).exists())
+
+
+class QuoteCloneTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="cloneuser", password="password123"
+        )
+        for codename in ["view_quote", "add_quote", "change_quote"]:
+            self.user.user_permissions.add(Permission.objects.get(codename=codename))
+        self.client = Client()
+        self.client.login(username="cloneuser", password="password123")
+
+        self.customer1 = Customer.objects.create(name="Client Original", city="Casablanca")
+        self.customer2 = Customer.objects.create(name="Client Nouveau", city="Rabat")
+
+        self.quote = Quote.objects.create(
+            customer=self.customer1,
+            notes="Notes récurrentes importantes",
+        )
+        QuoteLine.objects.create(
+            quote=self.quote,
+            description="Prestation d'infogérance mensuelle",
+            quantity=Decimal("2.000"),
+            unit_price=Decimal("1500.00"),
+            discount_type="percentage",
+            discount_value=Decimal("10.00"),
+        )
+
+    def test_clone_quote_same_and_different_customer(self):
+        from apps.finance.quote_services import clone_quote
+        # 1. Cloner pour un autre client
+        cloned = clone_quote(self.quote.pk, self.customer2.pk, self.user)
+        self.assertEqual(cloned.customer, self.customer2)
+        self.assertEqual(cloned.status, Quote.Status.DRAFT)
+        self.assertEqual(cloned.notes, "Notes récurrentes importantes")
+        self.assertEqual(cloned.lines.count(), 1)
+        cloned_line = cloned.lines.first()
+        self.assertEqual(cloned_line.description, "Prestation d'infogérance mensuelle")
+        self.assertEqual(cloned_line.quantity, Decimal("2.000"))
+        self.assertEqual(cloned_line.unit_price, Decimal("1500.00"))
+        self.assertEqual(cloned_line.discount_value, Decimal("10.00"))
+
+        # Vérification historique
+        self.assertTrue(
+            DocumentHistory.objects.filter(
+                quote=cloned,
+                event=DocumentHistory.Event.CREATED,
+                snapshot__cloned_from_quote_id=self.quote.pk,
+            ).exists()
+        )
+
+    def test_quote_clone_view(self):
+        response = self.client.post(
+            reverse("quote-clone", args=[self.quote.pk]),
+            {"customer_id": self.customer2.pk},
+        )
+        new_quote = Quote.objects.filter(customer=self.customer2).first()
+        self.assertIsNotNone(new_quote)
+        self.assertRedirects(response, reverse("quote-detail", args=[new_quote.pk]))

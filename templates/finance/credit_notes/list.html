@@ -1,0 +1,115 @@
+{% extends "finance/quotes/base.html" %}
+{% load finance_quotes %}
+{% block title %}Notes d'avoir (Avoirs){% endblock %}
+
+{% block content %}
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">VENTES · FACTURATION</p>
+        <h1>Avoirs & Notes de crédit</h1>
+        <p class="subheading">Consultez et gérez les retours partiels, totaux et rectifications sur vos factures émises.</p>
+    </div>
+    <div style="display: flex; gap: 8px;">
+        <a class="button secondary" href="{% url 'invoice-list' %}">← Liste des factures</a>
+    </div>
+</div>
+
+<section class="panel filter-panel">
+    <form method="get" class="filters">
+        <label class="search-field">
+            <span>Recherche</span>
+            <input type="search" name="q" value="{{ filters.q }}" placeholder="N° avoir, client, facture d'origine...">
+        </label>
+        <label>
+            <span>Statut</span>
+            <select name="status">
+                <option value="">Tous les statuts</option>
+                {% for value, label in statuses %}
+                    <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <button class="button secondary" type="submit">Filtrer</button>
+        <a class="button quiet" href="{% url 'credit-note-list' %}">Effacer</a>
+    </form>
+</section>
+
+<section class="panel table-panel">
+    {% if page.object_list %}
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>N° d'avoir</th>
+                        <th>Date</th>
+                        <th>Facture rattachée</th>
+                        <th>Client</th>
+                        <th>Motif</th>
+                        <th>Statut</th>
+                        <th class="numeric">Montant TTC</th>
+                        <th class="numeric">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for cn in page %}
+                        <tr>
+                            <td>
+                                <a class="table-link" href="{% url 'credit-note-detail' cn.pk %}" style="font-weight: 700; color: #1e3a8a;">
+                                    {{ cn.number|default:"Brouillon #"|add:cn.pk|stringformat:"s" }}
+                                </a>
+                            </td>
+                            <td>{{ cn.issue_date|date:"d/m/Y"|default:"—" }}</td>
+                            <td>
+                                <a href="{% url 'invoice-detail' cn.invoice.pk %}" style="color: #475569; text-decoration: underline;">
+                                    {{ cn.invoice.number|default:cn.invoice.pk }}
+                                </a>
+                            </td>
+                            <td>{{ cn.customer.name }}</td>
+                            <td>{{ cn.get_reason_display }}</td>
+                            <td>
+                                {% if cn.status == "issued" %}
+                                    <span class="pay-method-badge" style="background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0;">✓ Émis</span>
+                                {% else %}
+                                    <span class="pay-method-badge" style="background: #fef3c7; color: #92400e; border: 1px solid #fde68a;">📝 Brouillon</span>
+                                {% endif %}
+                            </td>
+                            <td class="numeric">
+                                <strong style="color: #991b1b;">− {{ cn.total_ttc|money }} MAD</strong>
+                            </td>
+                            <td class="numeric" style="white-space: nowrap;">
+                                <a class="button quiet button-sm" href="{% url 'credit-note-detail' cn.pk %}">Consulter</a>
+                                <a class="button quiet button-sm" href="{% url 'credit-note-pdf' cn.pk %}">PDF</a>
+                                <a class="button quiet button-sm" href="{% url 'credit-note-docx' cn.pk %}">Word</a>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if page.paginator.num_pages > 1 %}
+            <nav class="pagination" aria-label="Pagination">
+                {% if page.has_previous %}
+                    <a class="button quiet button-sm" href="?page={{ page.previous_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}">Précédent</a>
+                {% endif %}
+                <span class="pagination-current">Page {{ page.number }} sur {{ page.paginator.num_pages }}</span>
+                {% if page.has_next %}
+                    <a class="button quiet button-sm" href="?page={{ page.next_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}">Suivant</a>
+                {% endif %}
+            </nav>
+        {% endif %}
+    {% else %}
+        <div style="text-align: center; padding: 48px 24px; color: #64748b;">
+            <p style="font-size: 2rem; margin: 0 0 12px 0;">↩️</p>
+            <h3 style="margin: 0 0 8px 0; color: #0f172a;">Aucun avoir enregistré</h3>
+            <p style="margin: 0; font-size: 14px;">
+                Pour établir un avoir suite à un retour d'articles ou une remise après facturation, ouvrez la facture émise correspondante et cliquez sur <strong>« Établir un avoir »</strong>.
+            </p>
+            <div style="margin-top: 20px;">
+                <a class="button primary" href="{% url 'invoice-list' %}">Consulter les factures</a>
+            </div>
+        </div>
+    {% endif %}
+</section>
+{% endblock %}
+

@@ -1,0 +1,106 @@
+{% extends "finance/quotes/base.html" %}
+
+{% block title %}Réceptionner du stock{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">APPROVISIONNEMENT · ENTRÉE DE MARCHANDISES</p>
+        <h1>Réceptionner du Stock</h1>
+        <p class="subheading">Enregistrement d'un bon de livraison fournisseur avec mise à jour immédiate du stock physique.</p>
+    </div>
+    <a class="button quiet" href="{% url 'stock-dashboard' %}">← Retour au stock</a>
+</div>
+
+<div style="max-width: 800px; margin: 0 auto;">
+    <section class="panel" style="padding: 24px;">
+        <form method="post" novalidate>
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+                <div class="message error" style="margin-bottom: 20px;">
+                    {{ form.non_field_errors }}
+                </div>
+            {% endif %}
+
+            <div style="display: grid; gap: 16px;">
+                <!-- Article -->
+                <div>
+                    <label for="{{ form.article.id_for_label }}" style="display: block; font-weight: 600; margin-bottom: 6px;">
+                        {{ form.article.label }} <span style="color: #dc2626;">*</span>
+                    </label>
+                    {{ form.article }}
+                    {% if form.article.errors %}<small style="color: #dc2626;">{{ form.article.errors|join:", " }}</small>{% endif %}
+                </div>
+
+                <!-- Ligne Fournisseur -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div>
+                        <label for="{{ form.supplier.id_for_label }}" style="display: block; font-weight: 600; margin-bottom: 6px;">
+                            {{ form.supplier.label }}
+                        </label>
+                        {{ form.supplier }}
+                        <small style="color: #64748b; font-size: 0.78rem;">Fournisseur enregistré dans l'application</small>
+                    </div>
+                    <div>
+                        <label for="{{ form.supplier_name.id_for_label }}" style="display: block; font-weight: 600; margin-bottom: 6px;">
+                            {{ form.supplier_name.label }}
+                        </label>
+                        {{ form.supplier_name }}
+                        <small style="color: #64748b; font-size: 0.78rem;">Si fournisseur ponctuel non enregistré</small>
+                    </div>
+                </div>
+
+                <!-- Ligne Quantité & Document -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div>
+                        <label for="{{ form.quantity.id_for_label }}" style="display: block; font-weight: 600; margin-bottom: 6px;">
+                            {{ form.quantity.label }} <span style="color: #dc2626;">*</span>
+                        </label>
+                        {{ form.quantity }}
+                        {% if form.quantity.errors %}<small style="color: #dc2626;">{{ form.quantity.errors|join:", " }}</small>{% endif %}
+                    </div>
+                    <div>
+                        <label for="{{ form.reference_document.id_for_label }}" style="display: block; font-weight: 600; margin-bottom: 6px;">
+                            {{ form.reference_document.label }} <span style="color: #dc2626;">*</span>
+                        </label>
+                        {{ form.reference_document }}
+                        <small style="color: #64748b; font-size: 0.78rem;">{{ form.reference_document.help_text }}</small>
+                        {% if form.reference_document.errors %}<small style="color: #dc2626;">{{ form.reference_document.errors|join:", " }}</small>{% endif %}
+                    </div>
+                </div>
+
+                <!-- Prix d'achat constaté & Actualisation PUMP -->
+                <div style="background: #f8fafc; padding: 14px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                    <label for="{{ form.unit_price_ht.id_for_label }}" style="display: block; font-weight: 600; margin-bottom: 6px;">
+                        {{ form.unit_price_ht.label }}
+                    </label>
+                    {{ form.unit_price_ht }}
+                    <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
+                        {{ form.update_cost_price }}
+                        <label for="{{ form.update_cost_price.id_for_label }}" style="font-size: 0.88rem; cursor: pointer; margin: 0;">
+                            {{ form.update_cost_price.label }}
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Observations -->
+                <div>
+                    <label for="{{ form.notes.id_for_label }}" style="display: block; font-weight: 600; margin-bottom: 6px;">
+                        {{ form.notes.label }}
+                    </label>
+                    {{ form.notes }}
+                </div>
+            </div>
+
+            <div style="margin-top: 24px; display: flex; justify-content: flex-end; gap: 12px; border-top: 1px solid #e2e8f0; padding-top: 16px;">
+                <a class="button quiet" href="{% url 'stock-dashboard' %}">Annuler</a>
+                <button type="submit" class="button primary" style="background: #059669; border-color: #059669; font-weight: 700; padding: 10px 24px;">
+                    ✓ Valider l'entrée en stock
+                </button>
+            </div>
+        </form>
+    </section>
+</div>
+{% endblock %}
+

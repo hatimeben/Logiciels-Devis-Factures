@@ -2,7 +2,7 @@ from django import forms
 from django.core.exceptions import ValidationError
 from django.forms import inlineformset_factory
 
-from apps.catalog.models import Service, TaxRate
+from apps.catalog.models import Article, Service, TaxRate
 from apps.partners.models import Customer
 from apps.projects.models import Project
 
@@ -24,6 +24,22 @@ class QuoteForm(forms.ModelForm):
         self.fields["project"].queryset = Project.objects.all()
         self.fields["project"].required = False
 
+
+
+class ArticleSelect(forms.Select):
+    def __init__(self, articles, attrs=None, choices=()):
+        self.articles = {str(article.pk): article for article in articles}
+        super().__init__(attrs, choices=choices)
+
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(name, value, label, selected, index, subindex, attrs)
+        article = self.articles.get(str(value)) if value else None
+        if article:
+            price = f"{article.prix_vente_ht:,.2f}".replace(",", " ").replace(".", ",")
+            option["label"] = f"📦 {article.reference} — {article.designation} (Stock: {article.stock_actuel:g}) — {price} MAD HT"
+            option["attrs"]["data-description"] = f"{article.reference} - {article.designation}"
+            option["attrs"]["data-unit-price"] = str(article.prix_vente_ht)
+        return option
 
 class ServiceSelect(forms.Select):
     def __init__(self, services, attrs=None, choices=()):
@@ -58,6 +74,7 @@ class QuoteLineForm(forms.ModelForm):
     class Meta:
         model = QuoteLine
         fields = [
+            "article",
             "service",
             "description",
             "quantity",
@@ -68,13 +85,22 @@ class QuoteLineForm(forms.ModelForm):
         ]
         widgets = {
             "description": forms.TextInput(attrs={"maxlength": 250}),
-            "quantity": forms.NumberInput(attrs={"step": "0.001", "min": "0.001"}),
+            "quantity": forms.NumberInput(attrs={"step": "1", "min": "1"}),
             "unit_price": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
             "discount_value": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        articles = list(Article.objects.filter(is_active=True).order_by("reference"))
+        self.fields["article"].queryset = Article.objects.filter(
+            pk__in=[art.pk for art in articles]
+        )
+        self.fields["article"].required = False
+        self.fields["article"].widget = ArticleSelect(
+            articles,
+            choices=self.fields["article"].choices,
+        )
         services = list(Service.objects.filter(is_active=True).order_by("name"))
         self.fields["service"].queryset = Service.objects.filter(
             pk__in=[service.pk for service in services]
@@ -100,6 +126,12 @@ class QuoteLineForm(forms.ModelForm):
 
     def clean(self):
         cleaned = super().clean()
+        article = cleaned.get("article")
+        if article and not cleaned.get("description"):
+            cleaned["description"] = f"{article.reference} - {article.designation}"
+        if article and cleaned.get("unit_price") is None:
+            cleaned["unit_price"] = article.prix_vente_ht
+
         service = cleaned.get("service")
         if service and not cleaned.get("description"):
             cleaned["description"] = service.name
@@ -114,6 +146,15 @@ class QuoteLineForm(forms.ModelForm):
             self.instance.tax_percentage = None
             self.instance.tax_name = ""
         return cleaned
+
+    def clean_quantity(self):
+        quantity = self.cleaned_data.get("quantity")
+        if quantity is not None:
+            if quantity < 1:
+                raise ValidationError("La quantité doit être supérieure ou égale à 1.")
+            if quantity % 1 != 0:
+                raise ValidationError("La quantité doit être un nombre entier (ex: 1, 2, 5).")
+        return quantity
 
     def clean_discount_value(self):
         value = self.cleaned_data["discount_value"]

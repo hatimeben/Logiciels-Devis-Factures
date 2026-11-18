@@ -1,3 +1,4 @@
+import re
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
@@ -12,8 +13,12 @@ from django.views.decorators.http import require_POST
 
 from apps.partners.models import Customer
 from .invoice_forms import InvoiceDraftForm, InvoiceForm, InvoiceLineFormSet
+from .document_filename import get_document_download_filename
+from .invoice_docx import build_invoice_docx
 from .invoice_pdf import build_invoice_pdf
 from .invoice_services import (
+    cancel_invoice,
+    clone_invoice,
     convert_quote_to_invoice,
     issue_invoice,
     save_invoice_draft,
@@ -117,6 +122,9 @@ def invoice_convert(request, quote_id):
                 try:
                     qty_val = Decimal(val_str)
                     if qty_val > Decimal("0.000"):
+                        if qty_val % 1 != 0:
+                            messages.error(request, "Les quantités facturées doivent être des nombres entiers.")
+                            return redirect("finance:quote_detail", pk=quote_id)
                         line_quantities[line.pk] = qty_val
                 except (InvalidOperation, TypeError):
                     pass
@@ -170,23 +178,47 @@ def invoice_detail(request, invoice_id):
     )
     for line in lines:
         line.amounts = calculate_quote_totals([line])
-    customer_snapshot = invoice.customer_snapshot or {
-        "name": invoice.customer.name,
-        "email": invoice.customer.email,
-        "phone": invoice.customer.phone,
-        "address": invoice.customer.address,
-        "city": invoice.customer.city,
-        "country": invoice.customer.country,
-        "tax_identifier": invoice.customer.tax_identifier,
-    }
+    customer_snapshot = dict(invoice.customer_snapshot or {})
+    if not customer_snapshot.get("name") and invoice.customer:
+        customer_snapshot["name"] = invoice.customer.name
+    if not customer_snapshot.get("email") and invoice.customer:
+        customer_snapshot["email"] = invoice.customer.email
+    if not customer_snapshot.get("phone") and invoice.customer:
+        customer_snapshot["phone"] = invoice.customer.phone
+    if not customer_snapshot.get("address") and invoice.customer:
+        customer_snapshot["address"] = invoice.customer.address
+    if not customer_snapshot.get("city") and invoice.customer:
+        customer_snapshot["city"] = invoice.customer.city
+    if not customer_snapshot.get("country") and invoice.customer:
+        customer_snapshot["country"] = invoice.customer.country
+    if not customer_snapshot.get("ice") and invoice.customer:
+        customer_snapshot["ice"] = getattr(invoice.customer, "ice", "")
+    if not customer_snapshot.get("tax_identifier") and invoice.customer:
+        customer_snapshot["tax_identifier"] = getattr(invoice.customer, "tax_identifier", "")
+
+    # Auto-synchronisation si l'ICE client est présent sur la fiche client mais absent du snapshot
+    if invoice.customer and invoice.customer.ice and not (invoice.customer_snapshot or {}).get("ice"):
+        invoice.customer_snapshot = customer_snapshot
+        invoice.save(update_fields=["customer_snapshot"])
     history = DocumentHistory.objects.filter(invoice=invoice).select_related("actor")
     allocations = invoice.payment_allocations.select_related("payment").order_by(
         "-payment__payment_date", "-id"
+    )
+    credit_notes = invoice.credit_notes.all().order_by("-created_at")
+    can_create_credit_note = (
+        request.user.has_perm("finance.add_creditnote")
+        and invoice.status in {Invoice.Status.ISSUED, Invoice.Status.PARTIALLY_PAID, Invoice.Status.PAID, Invoice.Status.OVERDUE}
+        and any(line.remaining_creditable_quantity > 0 for line in lines)
     )
     can_add_payment = (
         request.user.has_perm("finance.add_payment")
         and invoice.status in {Invoice.Status.ISSUED, Invoice.Status.PARTIALLY_PAID, Invoice.Status.OVERDUE}
         and invoice.remaining_balance > 0
+    )
+    can_cancel = (
+        request.user.has_perm("finance.change_invoice")
+        and invoice.status in {Invoice.Status.ISSUED, Invoice.Status.OVERDUE}
+        and not invoice.payment_allocations.exists()
     )
     return render(
         request,
@@ -199,8 +231,13 @@ def invoice_detail(request, invoice_id):
             "customer_snapshot": customer_snapshot,
             "history": history,
             "allocations": allocations,
+            "credit_notes": credit_notes,
+            "can_create_credit_note": can_create_credit_note,
             "can_change": request.user.has_perm("finance.change_invoice"),
+            "can_add": request.user.has_perm("finance.add_invoice"),
             "can_add_payment": can_add_payment,
+            "can_cancel": can_cancel,
+            "customers": Customer.objects.filter(is_active=True).order_by("name"),
         },
     )
 
@@ -265,6 +302,43 @@ def invoice_issue(request, invoice_id):
         return redirect("invoice-detail", invoice_id=invoice_id)
     messages.success(request, f"La facture {invoice.number} a été émise.")
     return redirect("invoice-detail", invoice_id=invoice.pk)
+
+
+@require_POST
+@login_required
+@permission_required("finance.change_invoice", raise_exception=True)
+def invoice_cancel(request, invoice_id):
+    motif = request.POST.get("motif", "").strip()
+    try:
+        invoice = cancel_invoice(invoice_id, request.user, motif=motif)
+    except ValidationError as error:
+        messages.error(request, "Annulation impossible : " + " ".join(error.messages))
+    else:
+        messages.success(
+            request,
+            f"La facture {invoice.number} a été annulée avec succès. Le stock d'articles associé a été réintégré."
+        )
+    return redirect("invoice-detail", invoice_id=invoice_id)
+
+
+@require_POST
+@login_required
+@permission_required("finance.add_invoice", raise_exception=True)
+def invoice_clone(request, invoice_id):
+    target_customer_id = request.POST.get("customer_id")
+    if not target_customer_id:
+        messages.error(request, "Veuillez sélectionner un client pour la duplication.")
+        return redirect("invoice-detail", invoice_id=invoice_id)
+    try:
+        new_invoice = clone_invoice(invoice_id, target_customer_id, request.user)
+    except Exception as error:
+        messages.error(request, f"Erreur lors de la duplication de la facture : {error}")
+        return redirect("invoice-detail", invoice_id=invoice_id)
+    messages.success(
+        request,
+        f"La facture a été dupliquée avec succès sous forme de brouillon pour le client « {new_invoice.customer.name} »."
+    )
+    return redirect("invoice-detail", invoice_id=new_invoice.pk)
 
 
 @login_required
@@ -370,7 +444,56 @@ def invoice_pdf(request, invoice_id):
         pk=invoice_id,
     )
     content = build_invoice_pdf(invoice)
-    filename = invoice.number or f"facture-brouillon-{invoice.pk}"
+    filename = get_document_download_filename(invoice, doc_type="facture")
     response = HttpResponse(content, content_type="application/pdf")
     response["Content-Disposition"] = f'attachment; filename="{filename}.pdf"'
     return response
+
+
+@login_required
+@permission_required("finance.view_invoice", raise_exception=True)
+def invoice_docx(request, invoice_id):
+    invoice = get_object_or_404(
+        Invoice.objects.select_related("customer").prefetch_related("lines", "payment_allocations"),
+        pk=invoice_id,
+    )
+    content = build_invoice_docx(invoice)
+    filename = get_document_download_filename(invoice, doc_type="facture")
+    response = HttpResponse(
+        content,
+        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+    response["Content-Disposition"] = f'attachment; filename="{filename}.docx"'
+    return response
+
+
+@login_required
+@permission_required("finance.change_invoice", raise_exception=True)
+def update_invoice_customer_ice(request, invoice_id):
+    if request.method != "POST":
+        return redirect("invoice-detail", invoice_id=invoice_id)
+    from django.shortcuts import get_object_or_404, redirect
+    from django.db import transaction
+    invoice = get_object_or_404(Invoice.objects.select_related("customer"), pk=invoice_id)
+    raw_ice = request.POST.get("ice", "").strip()
+    cleaned_ice = re.sub(r"\s+", "", raw_ice)
+    if cleaned_ice and not (cleaned_ice.isdigit() and len(cleaned_ice) == 15):
+        messages.error(request, "L'ICE marocain doit comporter exactement 15 chiffres.")
+        return redirect("invoice-detail", invoice_id=invoice_id)
+
+    with transaction.atomic():
+        if invoice.customer:
+            invoice.customer.ice = cleaned_ice
+            invoice.customer.save(update_fields=["ice"])
+        snapshot = dict(invoice.customer_snapshot or {})
+        snapshot["ice"] = cleaned_ice
+        invoice.customer_snapshot = snapshot
+        invoice.save(update_fields=["customer_snapshot"])
+        DocumentHistory.objects.create(
+            invoice=invoice,
+            event=DocumentHistory.Event.UPDATED,
+            actor=request.user,
+            snapshot={"ice": cleaned_ice, "action": "update_customer_ice"},
+        )
+    messages.success(request, f"L'ICE client ({cleaned_ice}) a été enregistré et appliqué avec succès.")
+    return redirect("invoice-detail", invoice_id=invoice_id)

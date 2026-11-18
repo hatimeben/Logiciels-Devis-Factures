@@ -1,0 +1,179 @@
+{% extends "finance/quotes/base.html" %}
+{% load finance_quotes %}
+{% block title %}Établir un avoir · {{ invoice.number|default:"Facture" }}{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">NOTES DE CRÉDIT · FACTURATION</p>
+        <h1>Établir un avoir (Note de crédit)</h1>
+        <p class="subheading">
+            Facture d'origine : <a href="{% url 'invoice-detail' invoice.pk %}"><strong>{{ invoice.number|default:"Brouillon" }}</strong></a>
+            — Client : <strong>{{ invoice.customer.name }}</strong>
+        </p>
+    </div>
+    <div class="heading-actions">
+        <a class="button quiet" href="{% url 'invoice-detail' invoice.pk %}">← Retour à la facture</a>
+    </div>
+</div>
+
+<form method="post" id="creditNoteForm">
+    {% csrf_token %}
+
+    <div class="summary-grid" style="margin-bottom: 24px;">
+        <article class="panel summary-card">
+            <span>Facture de référence</span>
+            <strong>{{ invoice.number }}</strong>
+            <small>Émise le {{ invoice.issue_date|date:"d/m/Y"|default:"—" }}</small>
+        </article>
+        <article class="panel summary-card">
+            <span>Montant total facture</span>
+            <strong>{{ invoice.total_ttc|money }} MAD TTC</strong>
+            <small>Réglé : {{ invoice.total_paid|money }} MAD</small>
+        </article>
+        <article class="panel summary-card">
+            <span>Avoirs déjà émis</span>
+            <strong style="color: #991b1b;">− {{ invoice.total_credited|money }} MAD</strong>
+            <small>Solde restant : {{ invoice.remaining_balance|money }} MAD</small>
+        </article>
+    </div>
+
+    <section class="panel table-panel">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">SELECTION DES RETOURS / PRESTATIONS</p>
+                <h2>Articles et services à créditer</h2>
+            </div>
+            <div style="display: flex; gap: 8px;">
+                <button type="button" class="button quiet button-sm" onclick="creditAllLines()">Tout retourner (Avoir total)</button>
+                <button type="button" class="button quiet button-sm" onclick="resetAllLines()">Réinitialiser</button>
+            </div>
+        </div>
+
+        <p style="font-size: 14px; color: #64748b; margin-top: 0; margin-bottom: 16px;">
+            Indiquez ci-dessous la <strong>quantité retournée</strong> pour chaque ligne. 
+            Les articles de stock retournés seront automatiquement réintégrés dans l'inventaire lors de la validation officielle de l'avoir.
+        </p>
+
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Désignation</th>
+                        <th>Nature</th>
+                        <th class="numeric">Qté facturée</th>
+                        <th class="numeric">Déjà crédité</th>
+                        <th class="numeric">Qté restante</th>
+                        <th class="numeric">Prix unitaire HT</th>
+                        <th style="min-width: 140px; text-align: center;">Qté à créditer</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for line in creditable_lines %}
+                        <tr>
+                            <td>
+                                <strong>{{ line.description }}</strong>
+                                {% if line.article %}
+                                    <div style="font-size: 11px; color: #2563eb;">📦 Article de stock (Réf: {{ line.article.reference|default:"—" }})</div>
+                                {% elif line.service %}
+                                    <div style="font-size: 11px; color: #7c3aed;">🛠️ Prestation de service</div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if line.article %}
+                                    <span class="pay-method-badge" style="background: #eff6ff; color: #1e40af;">Matériel</span>
+                                {% else %}
+                                    <span class="pay-method-badge" style="background: #f5f3ff; color: #5b21b6;">Prestation</span>
+                                {% endif %}
+                            </td>
+                            <td class="numeric">{{ line.quantity }}</td>
+                            <td class="numeric">{{ line.credited_quantity }}</td>
+                            <td class="numeric" style="font-weight: 700; color: #0f172a;">{{ line.remaining_creditable_quantity }}</td>
+                            <td class="numeric">{{ line.unit_price|money }} MAD</td>
+                            <td style="text-align: center;">
+                                <input 
+                                    type="number" 
+                                    name="qty_{{ line.pk }}" 
+                                    id="qty_{{ line.pk }}"
+                                    data-max="{{ line.remaining_creditable_quantity }}"
+                                    min="0" 
+                                    max="{{ line.remaining_creditable_quantity }}" 
+                                    step="1" 
+                                    value="0"
+                                    style="width: 90px; text-align: center; padding: 6px; font-weight: 700; border: 2px solid #cbd5e1; border-radius: 6px; font-size: 14px;"
+                                >
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="7" style="text-align: center; padding: 24px; color: #64748b;">
+                                Aucune ligne restante à créditer sur cette facture.
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="panel form-panel" style="margin-top: 24px;">
+        <p class="eyebrow">JUSTIFICATION & CONTEXTE</p>
+        <h2 style="font-size: 1.1rem; margin-top: 0;">Motif de l'avoir</h2>
+
+        <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 16px; margin-bottom: 16px;">
+            <div>
+                <label for="reason" style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 6px;">Type de motif :</label>
+                <select name="reason" id="reason" style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; font-size: 14px;">
+                    {% for value, label in reasons %}
+                        <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="reason_details" style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 6px;">Précision du motif / Défectuosité :</label>
+                <input type="text" name="reason_details" id="reason_details" placeholder="Ex: Matériel défectueux retourné en boîte d'origine, geste commercial suite à retard..." style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; box-sizing: border-box;">
+            </div>
+        </div>
+
+        <div>
+            <label for="notes" style="display: block; font-weight: 600; font-size: 13px; margin-bottom: 6px;">Remarques & mentions légales complémentaires (visibles sur le PDF) :</label>
+            <textarea name="notes" id="notes" rows="3" placeholder="Informations complémentaires, accord client, conditions de remboursement ou déduction future..." style="width: 100%; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-family: inherit; font-size: 14px; box-sizing: border-box;"></textarea>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px;">
+            <a class="button quiet" href="{% url 'invoice-detail' invoice.pk %}">Annuler</a>
+            <button type="submit" class="button primary" id="submitBtn">📄 Enregistrer l'avoir (Brouillon)</button>
+        </div>
+    </section>
+</form>
+
+<script>
+function creditAllLines() {
+    document.querySelectorAll('input[type="number"][data-max]').forEach(function(inp) {
+        inp.value = inp.getAttribute('data-max');
+    });
+}
+
+function resetAllLines() {
+    document.querySelectorAll('input[type="number"][data-max]').forEach(function(inp) {
+        inp.value = "0";
+    });
+}
+
+document.getElementById('creditNoteForm').addEventListener('submit', function(e) {
+    let hasQuantity = false;
+    document.querySelectorAll('input[type="number"][data-max]').forEach(function(inp) {
+        let val = parseFloat(inp.value) || 0;
+        if (val > 0) {
+            hasQuantity = true;
+        }
+    });
+
+    if (!hasQuantity) {
+        e.preventDefault();
+        alert("Veuillez saisir au moins une quantité supérieure à 0 pour établir l'avoir.");
+    }
+});
+</script>
+{% endblock %}
+

@@ -124,6 +124,7 @@ def _convert_quote_once(quote_id, actor, line_quantities=None, invoice_notes=Non
             invoice.lines.create(
                 quote_line=line,
                 service=line.service,
+                article=getattr(line, "article", None),
                 description=line.description,
                 quantity=qty,
                 unit_price=line.unit_price,
@@ -225,6 +226,9 @@ def _issue_invoice_once(invoice_id, actor):
             raise ValidationError("La facture a déjà été émise ou modifiée.")
 
         invoice.refresh_from_db()
+        from apps.catalog.stock_services import decrementer_stock_depuis_facture
+        decrementer_stock_depuis_facture(invoice, actor=actor)
+
         DocumentHistory.objects.create(
             invoice=invoice,
             event=DocumentHistory.Event.ISSUED,
@@ -299,3 +303,114 @@ def update_invoice_draft(invoice, form, actor):
             },
         )
         return invoice
+
+
+def cancel_invoice(invoice_id, actor, motif=""):
+    """
+    Annule une facture émise :
+    - Vérifie que la facture n'est pas déjà annulée ni en brouillon.
+    - Bloque si des paiements sont déjà enregistrés sur cette facture.
+    - Réintègre automatiquement les articles en stock via des mouvements d'entrée.
+    - Met à jour le statut de la facture à CANCELLED.
+    - Met à jour le devis lié si applicable (remet le devis en ACCEPTED ou PARTIALLY_INVOICED).
+    - Enregistre l'événement d'annulation dans DocumentHistory.
+    """
+    with transaction.atomic():
+        invoice = Invoice.objects.select_for_update().get(pk=invoice_id)
+        if invoice.status == Invoice.Status.CANCELLED:
+            raise ValidationError("Cette facture est déjà annulée.")
+        if invoice.status == Invoice.Status.DRAFT:
+            raise ValidationError("Une facture brouillon doit être supprimée ou modifiée directement.")
+        
+        # Vérification des règlements
+        if invoice.payment_allocations.exists():
+            raise ValidationError(
+                "Impossible d'annuler cette facture car des paiements y sont rattachés. "
+                "Veuillez d'abord dissocier ou annuler les paiements correspondants."
+            )
+
+        old_status = invoice.status
+        Invoice.objects.filter(pk=invoice.pk).update(
+            status=Invoice.Status.CANCELLED,
+            updated_at=timezone.now(),
+        )
+
+        # Restitution du stock
+        from apps.catalog.stock_services import reintegrer_stock_depuis_annulation_facture
+        reintegrer_stock_depuis_annulation_facture(invoice, actor=actor, motif=motif)
+
+        # Mise à jour du devis associé le cas échéant
+        if invoice.quote:
+            quote = invoice.quote
+            quote_lines = list(quote.lines.all())
+            total_quoted = sum((l.quantity for l in quote_lines), Decimal("0.000"))
+            total_invoiced = sum((l.invoiced_quantity for l in quote_lines), Decimal("0.000"))
+
+            if total_invoiced <= Decimal("0.000"):
+                Quote.objects.filter(pk=quote.pk).update(status=Quote.Status.ACCEPTED, updated_at=timezone.now())
+            elif total_invoiced < total_quoted:
+                Quote.objects.filter(pk=quote.pk).update(status=Quote.Status.PARTIALLY_INVOICED, updated_at=timezone.now())
+
+        invoice.refresh_from_db()
+        DocumentHistory.objects.create(
+            invoice=invoice,
+            event=DocumentHistory.Event.STATUS_CHANGED,
+            actor=actor,
+            snapshot={
+                "from_status": old_status,
+                "to_status": Invoice.Status.CANCELLED,
+                "motif": motif,
+                "actor_username": actor.get_username(),
+                "document": invoice_snapshot(invoice),
+            },
+        )
+        return invoice
+
+
+def clone_invoice(source_invoice_id, target_customer_id, actor):
+    """
+    Duplique une facture existante sous la forme d'une nouvelle facture brouillon,
+    soit pour le même client, soit pour un client différent.
+    Copie toutes les lignes (prestations, articles, prix, remises, taxes).
+    """
+    from datetime import date, timedelta
+    from apps.partners.models import Customer
+
+    with transaction.atomic():
+        source = Invoice.objects.prefetch_related("lines").get(pk=source_invoice_id)
+        target_customer = Customer.objects.get(pk=target_customer_id)
+
+        cloned_invoice = Invoice.objects.create(
+            customer=target_customer,
+            project=source.project if source.customer_id == target_customer.id else None,
+            status=Invoice.Status.DRAFT,
+            customer_snapshot=_customer_snapshot(target_customer),
+            due_date=date.today() + timedelta(days=30),
+            notes=source.notes,
+        )
+        for line in source.lines.all():
+            cloned_invoice.lines.create(
+                service=line.service,
+                article=line.article,
+                description=line.description,
+                quantity=line.quantity,
+                unit_price=line.unit_price,
+                discount_type=line.discount_type,
+                discount_value=line.discount_value,
+                tax_rate=line.tax_rate,
+                tax_percentage=line.tax_percentage,
+                tax_name=line.tax_name,
+                position=line.position,
+            )
+        DocumentHistory.objects.create(
+            invoice=cloned_invoice,
+            event=DocumentHistory.Event.CREATED,
+            actor=actor,
+            snapshot={
+                "cloned_from_invoice_id": source.pk,
+                "cloned_from_invoice_number": source.number or f"Brouillon #{source.pk}",
+                "after": invoice_snapshot(cloned_invoice),
+                "actor_username": actor.get_username(),
+            },
+        )
+        return cloned_invoice

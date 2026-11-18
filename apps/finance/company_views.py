@@ -2,6 +2,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.shortcuts import redirect, render
 
+from .backup_services import list_backups
 from .company_forms import CompanySettingsForm
 from .models import CompanySettings
 
@@ -23,12 +24,14 @@ def company_settings_view(request):
         )
         return redirect("company-settings")
 
+    backups = list_backups()[:10]
     return render(
         request,
         "finance/company/settings.html",
         {
             "form": form,
             "company": settings_obj,
+            "backups": backups,
         },
     )
 

@@ -237,6 +237,128 @@ class InvoiceModuleTests(TestCase):
         )
 
 
+    def test_issued_invoice_filename_includes_designation(self):
+        from apps.finance.invoice_services import issue_invoice
+        invoice = convert_quote_to_invoice(self._accepted_quote().pk, self.user)
+        issue_invoice(invoice.pk, self.user)
+        invoice.refresh_from_db()
+
+        # PDF download filename
+        res_pdf = self.client.get(reverse("invoice-pdf", args=[invoice.pk]))
+        self.assertEqual(res_pdf.status_code, 200)
+        expected_number = invoice.number.replace("FAC-", "Facture-")
+        first_desc = invoice.lines.first().description
+        self.assertIn(f'{expected_number} {first_desc}.pdf', res_pdf["Content-Disposition"])
+
+        # Word download filename
+        res_docx = self.client.get(reverse("invoice-docx", args=[invoice.pk]))
+        self.assertEqual(res_docx.status_code, 200)
+        self.assertIn(f'{expected_number} {first_desc}.docx', res_docx["Content-Disposition"])
+
+    def test_cancel_invoice_success_and_stock_reintegration(self):
+        from apps.catalog.models import Article, MouvementStock
+        from apps.finance.invoice_services import cancel_invoice, issue_invoice
+
+        article = Article.objects.create(
+            designation="Disque SSD 1TB",
+            prix_vente_ht=Decimal("800.00"),
+            stock_actuel=Decimal("10.000"),
+        )
+        invoice = Invoice.objects.create(customer=self.customer)
+        InvoiceLine.objects.create(
+            invoice=invoice,
+            article=article,
+            description="Disque SSD 1TB",
+            quantity=Decimal("3.000"),
+            unit_price=Decimal("800.00"),
+        )
+        issue_invoice(invoice.pk, self.user)
+        article.refresh_from_db()
+        self.assertEqual(article.stock_actuel, Decimal("7.000"))
+
+        cancel_invoice(invoice.pk, self.user, motif="Annulation test")
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, Invoice.Status.CANCELLED)
+
+        article.refresh_from_db()
+        self.assertEqual(article.stock_actuel, Decimal("10.000"))
+
+        mouvement = MouvementStock.objects.filter(
+            article=article,
+            type_mouvement=MouvementStock.TypeMouvement.ENTREE,
+            reference_document=f"Annulation {invoice.number}",
+        ).first()
+        self.assertIsNotNone(mouvement)
+        self.assertEqual(mouvement.quantite, Decimal("3.000"))
+
+        self.assertTrue(
+            invoice.history.filter(
+                event=DocumentHistory.Event.STATUS_CHANGED,
+                snapshot__to_status=Invoice.Status.CANCELLED,
+            ).exists()
+        )
+
+    def test_cancel_invoice_blocked_if_payments_exist(self):
+        from apps.finance.invoice_services import cancel_invoice, issue_invoice
+        from apps.finance.payment_services import record_invoice_payment
+
+        invoice = convert_quote_to_invoice(self._accepted_quote().pk, self.user)
+        issue_invoice(invoice.pk, self.user)
+
+        record_invoice_payment(
+            invoice_id=invoice.pk,
+            amount=Decimal("100.00"),
+            payment_date=date.today(),
+            method="virement",
+            actor=self.user,
+        )
+
+        with self.assertRaises(ValidationError) as ctx:
+            cancel_invoice(invoice.pk, self.user, motif="Essai")
+        self.assertIn("paiements", str(ctx.exception))
+
+    def test_cancel_invoice_view_post(self):
+        from apps.finance.invoice_services import issue_invoice
+        invoice = convert_quote_to_invoice(self._accepted_quote().pk, self.user)
+        issue_invoice(invoice.pk, self.user)
+
+        res = self.client.post(
+            reverse("invoice-cancel", args=[invoice.pk]),
+            {"motif": "Erreur de facturation"},
+        )
+        self.assertRedirects(res, reverse("invoice-detail", args=[invoice.pk]))
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, Invoice.Status.CANCELLED)
+
+    def test_clone_invoice_for_same_and_different_customer(self):
+        from apps.finance.invoice_services import clone_invoice, issue_invoice
+
+        other_customer = Customer.objects.create(name="Autre Client Casablanca")
+        invoice = convert_quote_to_invoice(self._accepted_quote().pk, self.user)
+        issue_invoice(invoice.pk, self.user)
+        invoice.refresh_from_db()
+
+        # Dupliquer pour l'autre client
+        cloned = clone_invoice(invoice.pk, other_customer.pk, self.user)
+        self.assertEqual(cloned.customer, other_customer)
+        self.assertEqual(cloned.status, Invoice.Status.DRAFT)
+        self.assertIsNone(cloned.number)
+        self.assertEqual(cloned.lines.count(), invoice.lines.count())
+        self.assertEqual(
+            cloned.lines.first().description,
+            invoice.lines.first().description,
+        )
+
+        # Vérification vue POST
+        res = self.client.post(
+            reverse("invoice-clone", args=[invoice.pk]),
+            {"customer_id": other_customer.pk},
+        )
+        self.assertEqual(res.status_code, 302)
+        newest_invoice = Invoice.objects.filter(customer=other_customer).order_by("-id").first()
+        self.assertRedirects(res, reverse("invoice-detail", args=[newest_invoice.pk]))
+
+
 class ConcurrentInvoiceNumberTests(TransactionTestCase):
     reset_sequences = True
 

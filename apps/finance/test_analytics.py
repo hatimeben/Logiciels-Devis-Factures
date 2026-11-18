@@ -86,6 +86,26 @@ class AnalyticsServicesTests(TestCase):
         )
         self.assertEqual(pole_mat["key"], POLE_MATERIEL["key"])
 
+        # 4. Article physique du stock (compte 3111) toujours classé Matériel
+        from apps.catalog.models import Article
+        article = Article.objects.create(
+            reference="CAM-01",
+            designation="Camera IMOU Surveillance",
+            prix_vente_ht=Decimal("1100.00"),
+        )
+        pole_article = classify_activity_pole(
+            description="imou1 - Camera IMOU",
+            is_article=True,
+            article=article,
+        )
+        self.assertEqual(pole_article["key"], POLE_MATERIEL["key"])
+
+        # 5. Mots-clés matériels supplémentaires (ex: caméra)
+        pole_keyword = classify_activity_pole(
+            description="Caméra de sécurité autonome",
+        )
+        self.assertEqual(pole_keyword["key"], POLE_MATERIEL["key"])
+
     def test_revenue_by_activity_metrics(self):
         # Facture 1 : Conseil IA (15 000 MAD HT) + Formation (8 000 MAD HT)
         inv = Invoice.objects.create(

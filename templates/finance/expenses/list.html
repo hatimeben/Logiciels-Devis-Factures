@@ -47,6 +47,14 @@
             </select>
         </label>
         <label>
+            <span>Fiscalité IS</span>
+            <select name="fiscal">
+                <option value="">Toutes</option>
+                <option value="deductible" {% if filters.fiscal == "deductible" %}selected{% endif %}>Déductibles uniquement</option>
+                <option value="reintegration" {% if filters.fiscal == "reintegration" %}selected{% endif %}>À réintégrer (Non déductibles)</option>
+            </select>
+        </label>
+        <label>
             <span>Du</span>
             <input type="date" name="date_from" value="{{ filters.date_from }}">
         </label>
@@ -79,7 +87,14 @@
                     {% for expense in page %}
                         <tr>
                             <td>{{ expense.expense_date|date:"d/m/Y" }}</td>
-                            <td><a class="table-link" href="{% url 'expense-detail' expense.pk %}"><strong>{{ expense.description }}</strong></a></td>
+                            <td>
+                                <a class="table-link" href="{% url 'expense-detail' expense.pk %}"><strong>{{ expense.description }}</strong></a>
+                                {% if expense.has_fiscal_reintegration %}
+                                    <span style="display: inline-block; background: #fff1f2; color: #be123c; border: 1px solid #fecdd3; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 4px; margin-left: 6px;" title="Réintégration fiscale IS : {{ expense.fiscal_reintegration_amount|money }} MAD ({{ expense.effective_reintegration_reason }})">
+                                        ⚠️ Réintég. IS
+                                    </span>
+                                {% endif %}
+                            </td>
                             <td>{{ expense.category.name }}</td>
                             <td>{{ expense.supplier.name|default:"—" }}</td>
                             <td><span class="status status-{{ expense.payment_status|lower|cut:' ' }}">{{ expense.payment_status }}</span></td>

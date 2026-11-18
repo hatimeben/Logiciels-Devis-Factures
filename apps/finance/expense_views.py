@@ -56,6 +56,12 @@ def expense_list(request):
     elif status == "unpaid":
         expense_items = [e for e in expense_items if e.amount_paid == 0]
 
+    fiscal = request.GET.get("fiscal", "").strip()
+    if fiscal == "reintegration":
+        expense_items = [e for e in expense_items if e.has_fiscal_reintegration]
+    elif fiscal == "deductible":
+        expense_items = [e for e in expense_items if not e.has_fiscal_reintegration]
+
     page = Paginator(expense_items, 25).get_page(request.GET.get("page"))
     return render(
         request,

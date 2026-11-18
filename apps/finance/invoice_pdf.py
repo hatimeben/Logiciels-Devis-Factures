@@ -1,3 +1,4 @@
+import os
 from html import escape
 from io import BytesIO
 from decimal import Decimal
@@ -8,7 +9,7 @@ from reportlab.lib.enums import TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import LongTable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Image, LongTable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from .models import CompanySettings
 from .quote_calculations import calculate_quote_line, calculate_quote_totals
@@ -48,11 +49,17 @@ def build_invoice_pdf(invoice):
         author=f"{company.name} Gestion",
     )
     base = getSampleStyleSheet()
-    customer = invoice.customer_snapshot or {
-        "name": invoice.customer.name,
-        "address": invoice.customer.address,
-        "city": invoice.customer.city,
-    }
+    customer = dict(invoice.customer_snapshot or {})
+    if not customer.get("name") and invoice.customer:
+        customer["name"] = invoice.customer.name
+    if not customer.get("address") and invoice.customer:
+        customer["address"] = invoice.customer.address
+    if not customer.get("city") and invoice.customer:
+        customer["city"] = invoice.customer.city
+    if not customer.get("ice") and invoice.customer:
+        customer["ice"] = getattr(invoice.customer, "ice", "")
+    if not customer.get("tax_identifier") and invoice.customer:
+        customer["tax_identifier"] = getattr(invoice.customer, "tax_identifier", "")
     body = ParagraphStyle(
         "InvoiceBody",
         parent=base["BodyText"],
@@ -118,6 +125,20 @@ def build_invoice_pdf(invoice):
         addr_city.append(escape(customer["city"]))
     if addr_city:
         client_elements.append(Paragraph("<br/>".join(addr_city), muted))
+
+    fiscal_items = []
+    if customer.get("ice"):
+        fiscal_items.append(f"<b>ICE :</b> {escape(customer['ice'])}")
+    if customer.get("tax_identifier"):
+        fiscal_items.append(f"<b>IF :</b> {escape(customer['tax_identifier'])}")
+    if fiscal_items:
+        client_elements.append(Spacer(1, 1.2 * mm))
+        client_elements.append(
+            Paragraph(
+                " &nbsp;&nbsp;·&nbsp;&nbsp; ".join(fiscal_items),
+                ParagraphStyle("CustFiscal", parent=body, fontSize=8, leading=11, textColor=MIDNIGHT_BLUE)
+            )
+        )
 
     client_box = Table([[client_elements]], colWidths=[90 * mm])
     client_box.setStyle(TableStyle([
@@ -341,6 +362,63 @@ def build_invoice_pdf(invoice):
             Spacer(1, 6 * mm),
             bank_table,
         ])
+
+    # Bloc de signature & Cachet d'entreprise
+    notice_text = f"Facture arrêtée à la somme de : <b>{_money(totals['total'])} MAD TTC</b>.<br/>En votre aimable règlement par virement ou chèque."
+    left_sign_content = [
+        Paragraph(
+            f"<b><font color='{MIDNIGHT_BLUE.hexval()}'>RÈGLEMENT & CONDITIONS</font></b>",
+            ParagraphStyle("InvSignHead", parent=body, fontSize=8, leading=10),
+        ),
+        Spacer(1, 1 * mm),
+        Paragraph(
+            f"<font color='{MUTED.hexval()}'>{notice_text}</font>",
+            ParagraphStyle("InvSignSub", parent=body, fontSize=7.5, leading=10),
+        ),
+        Spacer(1, 14 * mm),
+    ]
+
+    company_sign_content = [
+        Paragraph(
+            f"<b><font color='{MIDNIGHT_BLUE.hexval()}'>POUR {escape(company.name.upper())}</font></b>",
+            ParagraphStyle("CompInvSignHead", parent=body, fontSize=8, leading=10),
+        ),
+        Paragraph(
+            f"<font color='{MUTED.hexval()}'>Cachet officiel & Signature autorisée :</font>",
+            ParagraphStyle("CompInvSignSub", parent=body, fontSize=7, leading=9),
+        ),
+    ]
+
+    stamp_path = company.stamp.path if (company.stamp and os.path.exists(company.stamp.path)) else None
+    if stamp_path:
+        company_sign_content.append(Spacer(1, 1 * mm))
+        company_sign_content.append(Image(stamp_path, width=46 * mm, height=23 * mm))
+    else:
+        company_sign_content.append(Spacer(1, 14 * mm))
+
+    sign_table = Table(
+        [[left_sign_content, company_sign_content]],
+        colWidths=[85 * mm, 85 * mm],
+    )
+    sign_table.setStyle(
+        TableStyle([
+            ("BACKGROUND", (0, 0), (0, 0), PALE),
+            ("BACKGROUND", (1, 0), (1, 0), PALE),
+            ("BOX", (0, 0), (0, 0), 0.5, GRID),
+            ("BOX", (1, 0), (1, 0), 0.5, GRID),
+            ("LINEBEFORE", (0, 0), (0, 0), 2.0, GOLD),
+            ("LINEBEFORE", (1, 0), (1, 0), 2.0, GOLD),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ])
+    )
+    story.extend([
+        Spacer(1, 6 * mm),
+        sign_table,
+    ])
 
     def draw_page(canvas, document):
         canvas.saveState()

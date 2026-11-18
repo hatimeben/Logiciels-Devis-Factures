@@ -18,13 +18,20 @@
             <a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}"><span aria-hidden="true">📊</span> Tableau de bord</a>
             <a class="nav-link {% if request.resolver_match.url_name == 'quote-list' or request.resolver_match.url_name == 'quote-create' or request.resolver_match.url_name == 'quote-detail' or request.resolver_match.url_name == 'quote-edit' %}active{% endif %}" href="{% url 'quote-list' %}"><span aria-hidden="true">▤</span> Devis</a>
             {% if perms.finance.view_invoice %}<a class="nav-link {% if request.resolver_match.url_name == 'invoice-list' or request.resolver_match.url_name == 'invoice-create' or request.resolver_match.url_name == 'invoice-detail' or request.resolver_match.url_name == 'invoice-edit' or request.resolver_match.url_name == 'invoice-payment' %}active{% endif %}" href="{% url 'invoice-list' %}"><span aria-hidden="true">▧</span> Factures</a>{% endif %}
+            {% if perms.finance.view_creditnote %}<a class="nav-link {% if 'avoirs' in request.path %}active{% endif %}" href="{% url 'credit-note-list' %}"><span aria-hidden="true">↩️</span> Avoirs</a>{% endif %}
             {% if perms.finance.view_payment %}<a class="nav-link {% if request.resolver_match.url_name == 'payment-list' %}active{% endif %}" href="{% url 'payment-list' %}"><span aria-hidden="true">💳</span> Règlements</a>{% endif %}
+            <a class="nav-link {% if 'stocks' in request.path %}active{% endif %}" href="{% url 'stock-dashboard' %}"><span aria-hidden="true">📦</span> Stocks</a>
             {% if perms.finance.view_expense %}<a class="nav-link {% if request.resolver_match.url_name == 'expense-list' or request.resolver_match.url_name == 'expense-create' or request.resolver_match.url_name == 'expense-detail' or request.resolver_match.url_name == 'expense-edit' or request.resolver_match.url_name == 'expense-payment' %}active{% endif %}" href="{% url 'expense-list' %}"><span aria-hidden="true">💸</span> Dépenses</a>{% endif %}
             {% if perms.finance.view_invoice %}<a class="nav-link {% if 'comptabilite' in request.path %}active{% endif %}" href="{% url 'accounting-dashboard' %}"><span aria-hidden="true">💼</span> Comptabilité</a>{% endif %}
             {% if perms.finance.change_companysettings %}<a class="nav-link {% if request.resolver_match.url_name == 'company-settings' %}active{% endif %}" href="{% url 'company-settings' %}"><span aria-hidden="true">🏢</span> Entreprise</a>{% endif %}
             {% if user.is_superuser %}<a class="nav-link" href="/admin/"><span aria-hidden="true">⚙</span> Administration</a>{% endif %}
         </nav>
-        <div style="display: flex; align-items: center; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <button type="button" class="global-search-btn" id="openSearchBtn" title="Recherche rapide (Ctrl + K)">
+                <span class="search-icon">🔍</span>
+                <span class="search-text">Rechercher...</span>
+                <kbd class="search-kbd">Ctrl K</kbd>
+            </button>
             <a class="user-chip" href="{% if user.is_superuser %}/admin/{% else %}#{% endif %}" title="{{ request.user.get_username }}">
                 <span class="user-avatar" aria-hidden="true">{{ request.user.get_username|slice:":1"|upper }}</span>
                 <span class="user-name">{{ request.user.get_username }}</span>
@@ -45,6 +52,27 @@
         {% endif %}
         {% block content %}{% endblock %}
     </main>
+
+    <!-- Modal Recherche Globale Rapide (Ctrl + K) -->
+    <div id="quickSearchOverlay" class="quick-search-overlay" style="display: none;" role="dialog" aria-modal="true" aria-label="Recherche rapide">
+        <div class="quick-search-box">
+            <div class="quick-search-header">
+                <span class="quick-search-icon">🔍</span>
+                <input type="text" id="quickSearchInput" class="quick-search-input" placeholder="Rechercher un client, devis, facture, article... (Échap pour fermer)" autocomplete="off" spellcheck="false">
+                <button type="button" id="closeSearchBtn" class="quick-search-close" title="Fermer (Échap)">✕</button>
+            </div>
+            <div id="quickSearchResults" class="quick-search-results">
+                <div class="quick-search-empty-hint">Tapez au moins 2 caractères pour rechercher...</div>
+            </div>
+            <div class="quick-search-footer">
+                <span><kbd>↑</kbd> <kbd>↓</kbd> Naviguer</span>
+                <span><kbd>↵ Entrée</kbd> Ouvrir</span>
+                <span><kbd>Échap</kbd> Fermer</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="{% static 'finance/quotes.js' %}"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

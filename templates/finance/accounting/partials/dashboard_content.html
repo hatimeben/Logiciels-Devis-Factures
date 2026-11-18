@@ -25,6 +25,29 @@
         <strong>{{ sales_data.totals.total|money }} MAD</strong>
         <small>{{ sales_data.totals.count }} facture(s) émise(s)</small>
     </article>
+    <article class="panel summary-card" style="border-top: 4px solid #2563eb; background: #eff6ff;">
+        <span style="color: #1d4ed8; font-weight: 700;">TVA Déductible s/ Charges</span>
+        <strong style="color: #2563eb; font-size: 1.45rem;">{{ purchases_data.totals.recoverable_vat|money }} MAD</strong>
+        <small style="color: #1d4ed8;">{{ purchases_data.totals.count }} charge(s) d'exploitation</small>
+    </article>
+
+    <article class="panel summary-card" style="border-top: 4px solid {% if is_net_vat_credit %}#059669{% else %}#7c3aed{% endif %}; background: {% if is_net_vat_credit %}#ecfdf5{% else %}#f5f3ff{% endif %};">
+        <span style="color: {% if is_net_vat_credit %}#047857{% else %}#6d28d9{% endif %}; font-weight: 700;">
+            {% if is_net_vat_credit %}Crédit de TVA (Reportable){% else %}TVA Nette à Décaisser (DGI){% endif %}
+        </span>
+        <strong style="color: {% if is_net_vat_credit %}#059669{% else %}#7c3aed{% endif %}; font-size: 1.45rem;">
+            {{ net_vat_abs|money }} MAD
+        </strong>
+        <small style="color: {% if is_net_vat_credit %}#047857{% else %}#6d28d9{% endif %};">
+            {% if is_net_vat_credit %}Crédit en votre faveur{% else %}À payer sur déclaration{% endif %}
+        </small>
+    </article>
+
+    <article class="panel summary-card" style="border-top: 4px solid #be123c; background: #fff1f2;">
+        <span style="color: #9f1239; font-weight: 700;">Réintégrations IS (Tab 3)</span>
+        <strong style="color: #be123c;">{{ non_deductible_data.totals.total_reintegration|money }} MAD</strong>
+        <small style="color: #9f1239;">{{ non_deductible_data.totals.count }} charge(s) concernée(s)</small>
+    </article>
 </section>
 
 <!-- Tableau de Synthèse de la TVA par Taux -->
@@ -71,6 +94,53 @@
 </section>
 {% endif %}
 
+<!-- Réconciliation Nette de TVA (Collectée - Déductible) -->
+<section class="panel" style="margin-bottom: 24px; padding: 20px; background: {% if is_net_vat_credit %}#f0fdf4{% else %}#faf5ff{% endif %}; border: 1px solid {% if is_net_vat_credit %}#bbf7d0{% else %}#e9d5ff{% endif %}; border-radius: 12px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
+        <div>
+            <span style="font-size: 0.8rem; font-weight: 700; text-transform: uppercase; color: {% if is_net_vat_credit %}#166534{% else %}#6b21a8{% endif %};">
+                ⚖️ Balance Fiscale Marocaine (CGI)
+            </span>
+            <h3 style="font-size: 1.15rem; font-weight: 700; color: #0f172a; margin: 4px 0 0 0;">
+                Calcul de la TVA Nette Due à la DGI
+            </h3>
+        </div>
+        <div>
+            <span style="display: inline-block; padding: 6px 14px; border-radius: 20px; font-weight: 700; font-size: 0.95rem; background: {% if is_net_vat_credit %}#059669{% else %}#7c3aed{% endif %}; color: #ffffff;">
+                {% if is_net_vat_credit %}Crédit de TVA : +{{ net_vat_abs|money }} MAD{% else %}Net à payer : {{ net_vat_abs|money }} MAD{% endif %}
+            </span>
+        </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 12px;">
+        <div style="background: #ffffff; padding: 12px 16px; border-radius: 8px; border: 1px solid #e2e8f0;">
+            <div style="font-size: 0.8rem; color: #64748b; font-weight: 600;">1. TVA Collectée (Ventes)</div>
+            <div style="font-size: 1.25rem; font-weight: 700; color: #c59b27;">{{ vat_data.totals.tax_amount|money }} MAD</div>
+            <small style="color: #94a3b8;">{{ vat_data.totals.count }} opération(s)</small>
+        </div>
+        <div style="background: #ffffff; padding: 12px 16px; border-radius: 8px; border: 1px solid #e2e8f0;">
+            <div style="font-size: 0.8rem; color: #64748b; font-weight: 600;">2. (-) TVA Déductible (Charges)</div>
+            <div style="font-size: 1.25rem; font-weight: 700; color: #2563eb;">-{{ purchases_data.totals.recoverable_vat|money }} MAD</div>
+            <small style="color: #94a3b8;">Compte PCGE 34552</small>
+        </div>
+        <div style="background: #ffffff; padding: 12px 16px; border-radius: 8px; border: 1px solid {% if is_net_vat_credit %}#86efac{% else %}#d8b4fe{% endif %};">
+            <div style="font-size: 0.8rem; color: #64748b; font-weight: 600;">3. (=) Solde Net de TVA</div>
+            <div style="font-size: 1.25rem; font-weight: 700; color: {% if is_net_vat_credit %}#059669{% else %}#7c3aed{% endif %};">
+                {{ net_vat_abs|money }} MAD
+            </div>
+            <small style="color: {% if is_net_vat_credit %}#059669{% else %}#7c3aed{% endif %}; font-weight: 600;">
+                {% if is_net_vat_credit %}À reporter sur déclaration suivante{% else %}Montant exact à décaisser{% endif %}
+            </small>
+        </div>
+    </div>
+
+    {% if purchases_data.totals.fuel_total_ttc > 0 %}
+    <div style="font-size: 0.82rem; color: #64748b; background: rgba(255,255,255,0.7); padding: 8px 12px; border-radius: 6px;">
+        ⛽ <strong>Carburant consommé (PCGE 61251) :</strong> {{ purchases_data.totals.fuel_total_ttc|money }} MAD TTC — Conformément à l'Art. 106-I-2° du CGI marocain, la TVA n'a pas été déduite et reste intégralement en charge d'exploitation déductible de l'IS.
+    </div>
+    {% endif %}
+</section>
+
 <!-- Navigation par Onglets -->
 <div class="accounting-tabs" style="display: flex; gap: 8px; border-bottom: 2px solid #e2e8f0; margin-bottom: 20px;">
     <a href="?year={{ year }}&period_type={{ period_type }}&period_value={{ period_value }}&regime={{ regime }}&tab=tva"
@@ -90,6 +160,18 @@
        data-tab="reglements"
        style="padding: 10px 18px; font-weight: 600; font-size: 0.95rem; text-decoration: none; border-bottom: 3px solid {% if active_tab == 'reglements' %}#0f172a{% else %}transparent{% endif %}; color: {% if active_tab == 'reglements' %}#0f172a{% else %}#64748b{% endif %};">
         💳 3. Journal des Règlements (TR)
+    </a>
+    <a href="?year={{ year }}&period_type={{ period_type }}&period_value={{ period_value }}&regime={{ regime }}&tab=reintegrations"
+       class="accounting-tab-link {% if active_tab == 'reintegrations' %}active{% endif %}"
+       data-tab="reintegrations"
+       style="padding: 10px 18px; font-weight: 600; font-size: 0.95rem; text-decoration: none; border-bottom: 3px solid {% if active_tab == 'reintegrations' %}#be123c{% else %}transparent{% endif %}; color: {% if active_tab == 'reintegrations' %}#be123c{% else %}#64748b{% endif %};">
+        ⚖️ 4. Réintégrations Fiscales IS (Tab. 3)
+    </a>
+    <a href="?year={{ year }}&period_type={{ period_type }}&period_value={{ period_value }}&regime={{ regime }}&tab=achats"
+       class="accounting-tab-link {% if active_tab == 'achats' %}active{% endif %}"
+       data-tab="achats"
+       style="padding: 10px 18px; font-weight: 600; font-size: 0.95rem; text-decoration: none; border-bottom: 3px solid {% if active_tab == 'achats' %}#2563eb{% else %}transparent{% endif %}; color: {% if active_tab == 'achats' %}#2563eb{% else %}#64748b{% endif %};">
+        🛒 5. Journal des Achats (AC)
     </a>
 </div>
 
@@ -358,5 +440,262 @@
         <p class="empty-inline">Aucun règlement client enregistré sur cette période.</p>
     {% endif %}
 </section>
+
+<!-- ============================================================== -->
+<!-- CONTENU DE L'ONGLET 4 : RÉINTÉGRATIONS FISCALES IS (TABLEAU 3) -->
+<!-- ============================================================== -->
+{% elif active_tab == "reintegrations" %}
+<section class="panel table-panel">
+    <div class="section-heading" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <div>
+            <p class="eyebrow">DÉTERMINATION DU RÉSULTAT FISCAL (IS)</p>
+            <h2>État des charges non déductibles & réintégrations extra-comptables</h2>
+        </div>
+        <div style="display: flex; gap: 8px;">
+            <a class="button secondary" href="{% url 'accounting-export-reintegration-csv' %}?year={{ year }}&period_type={{ period_type }}&period_value={{ period_value }}">
+                Export CSV (Excel)
+            </a>
+            <a class="button primary" style="background: #0f172a; border-color: #0f172a;" href="{% url 'accounting-export-pack' %}?year={{ year }}&period_type={{ period_type }}&period_value={{ period_value }}&regime={{ regime }}">
+                Pack Complet (.xlsx)
+            </a>
+        </div>
+    </div>
+
+    <!-- Synthèse par motif légal CGI -->
+    {% if non_deductible_data.summary_reasons %}
+        <div style="margin-bottom: 24px; padding: 18px; background: #fffcf5; border: 1px solid #fef08a; border-radius: 8px;">
+            <h3 style="margin: 0 0 12px 0; font-size: 0.95rem; color: #854d0e; text-transform: uppercase; letter-spacing: 0.04em;">
+                Ventilation des réintégrations par motif légal (CGI Maroc)
+            </h3>
+            <div style="display: flex; flex-wrap: wrap; gap: 16px;">
+                {% for item in non_deductible_data.summary_reasons %}
+                    <div style="background: #ffffff; border: 1px solid #fde047; padding: 10px 16px; border-radius: 8px; flex: 1; min-width: 200px;">
+                        <span style="font-size: 0.8rem; color: #713f12; font-weight: 600; display: block;">{{ item.reason }}</span>
+                        <strong style="font-size: 1.15rem; color: #be123c;">{{ item.amount|money }} MAD</strong>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    {% endif %}
+
+    {% if non_deductible_data.rows %}
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>N°</th>
+                        <th>Date</th>
+                        <th>Description / Pièce</th>
+                        <th>Catégorie</th>
+                        <th>Fournisseur</th>
+                        <th>ICE Fournisseur</th>
+                        <th class="numeric">Comptabilisé TTC</th>
+                        <th class="numeric">À Réintégrer (IS)</th>
+                        <th>Motif Légal (CGI)</th>
+                        <th>Justification fiscale</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in non_deductible_data.rows %}
+                        <tr>
+                            <td>{{ r.order_num }}</td>
+                            <td>{{ r.expense_date|date:"d/m/Y" }}</td>
+                            <td>
+                                <a href="{% url 'expense-detail' r.id %}" style="font-weight: 600; color: #1e3a8a;">
+                                    {{ r.description }}
+                                </a>
+                            </td>
+                            <td>{{ r.category_name }}</td>
+                            <td>{{ r.supplier_name }}</td>
+                            <td>{{ r.supplier_ice }}</td>
+                            <td class="numeric">{{ r.amount|money }} MAD</td>
+                            <td class="numeric" style="font-weight: 700; color: #be123c;">
+                                {{ r.reintegration_amount|money }} MAD
+                            </td>
+                            <td>
+                                <span style="font-size: 0.8rem; font-weight: 600; padding: 2px 8px; border-radius: 4px; background: #fee2e2; color: #991b1b;">
+                                    {{ r.reason_label }}
+                                </span>
+                            </td>
+                            <td style="font-size: 0.85rem; color: #475569;">
+                                {{ r.fiscal_notes|default:"—" }}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr style="background: #faf5e8; font-weight: 700; border-top: 2px solid #be123c;">
+                        <td colspan="6">TOTAL DES RÉINTÉGRATIONS FISCALES (TABLEAU N°3 IS)</td>
+                        <td class="numeric">{{ non_deductible_data.totals.total_recorded|money }} MAD</td>
+                        <td class="numeric" style="color: #be123c; font-size: 1.05rem;">
+                            {{ non_deductible_data.totals.total_reintegration|money }} MAD
+                        </td>
+                        <td colspan="2"></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    {% else %}
+        <div style="text-align: center; padding: 40px 20px; color: #64748b;">
+            <p style="font-size: 2.2rem; margin: 0 0 10px 0;">✓</p>
+            <h3 style="margin: 0 0 6px 0; color: #0f172a;">Aucune charge non déductible sur cette période</h3>
+            <p style="margin: 0; font-size: 0.95rem;">
+                Toutes les dépenses enregistrées sur la période respectent les critères de déductibilité du CGI (règlements sous le plafond espèces de 5 000 DH et charges d'exploitation déductibles).
+            </p>
+        </div>
+    {% endif %}
+</section>
 {% endif %}
 
+
+<!-- ============================================== -->
+<!-- CONTENU DE L'ONGLET 5 : JOURNAL DES ACHATS (AC)-->
+<!-- ============================================== -->
+{% if active_tab == "achats" %}
+<section class="panel table-panel">
+    <div class="section-heading" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <div>
+            <p class="eyebrow" style="color: #2563eb;">JOURNAL DES ACHATS & FRAIS GÉNÉRAUX (AC)</p>
+            <h2>Charges d'exploitation, ventilation PCGE et TVA récupérable</h2>
+        </div>
+        <div style="display: flex; gap: 8px;">
+            <a class="button secondary export-link-achats" href="{% url 'accounting-export-purchases-csv' %}?year={{ year }}&period_type={{ period_type }}&period_value={{ period_value }}&regime={{ regime }}">
+                Export CSV (Excel)
+            </a>
+            <a class="button primary" href="{% url 'expense-create' %}">
+                + Saisir une Dépense
+            </a>
+        </div>
+    </div>
+
+    <!-- Bannière fiscale pédagogique Carburant & TVA -->
+    <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; font-size: 0.9rem; color: #166534; display: flex; align-items: center; gap: 12px;">
+        <span style="font-size: 1.4rem;">⛽</span>
+        <div>
+            <strong>Règle fiscale automatique appliquée (Art. 106-I-2° CGI Maroc) :</strong>
+            La TVA sur le <em>Carburant</em> (compte PCGE <strong>61251</strong>) est fiscalement exclue du droit à déduction. Le système bascule automatiquement le montant en <strong>TTC pur</strong> (0 DH de TVA récupérée). La charge reste quant à elle <strong>100% déductible à l'IS</strong> (Art. 10 CGI).
+        </div>
+    </div>
+
+    <!-- Synthèse des Achats par Compte PCGE -->
+    {% if purchases_data.summary_by_account %}
+    <div style="margin-bottom: 24px;">
+        <h3 style="font-size: 1rem; font-weight: 700; color: #0f172a; margin-bottom: 10px;">
+            Ventilation des charges par Compte du Plan Comptable Marocain (PCGE)
+        </h3>
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead>
+                    <tr style="background: #1e293b; color: #ffffff;">
+                        <th>Compte PCGE</th>
+                        <th>Intitulé du Compte</th>
+                        <th class="numeric">Nb Dépenses</th>
+                        <th class="numeric">Base HT</th>
+                        <th class="numeric">TVA Récupérable (34552)</th>
+                        <th class="numeric">Total TTC</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in purchases_data.summary_by_account %}
+                        <tr>
+                            <td><span class="badge" style="background: #f1f5f9; color: #334155; font-weight: 700;">{{ item.account }}</span></td>
+                            <td><strong>{{ item.name }}</strong></td>
+                            <td class="numeric">{{ item.count }}</td>
+                            <td class="numeric">{{ item.base_ht|money }} MAD</td>
+                            <td class="numeric" style="color: #2563eb; font-weight: 700;">{{ item.vat_amount|money }} MAD</td>
+                            <td class="numeric font-bold">{{ item.total_ttc|money }} MAD</td>
+                        </tr>
+                    {% endfor %}
+                    <tr style="background: #eff6ff; font-weight: 700; border-top: 2px solid #2563eb;">
+                        <td colspan="2">TOTAL CHARGES D'EXPLOITATION</td>
+                        <td class="numeric">{{ purchases_data.totals.count }}</td>
+                        <td class="numeric">{{ purchases_data.totals.total_ht|money }} MAD</td>
+                        <td class="numeric" style="color: #2563eb; font-size: 1.05rem;">{{ purchases_data.totals.recoverable_vat|money }} MAD</td>
+                        <td class="numeric font-bold">{{ purchases_data.totals.total_ttc|money }} MAD</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Tableau détaillé des achats -->
+    {% if purchases_data.rows %}
+        <h3 style="font-size: 1rem; font-weight: 700; color: #0f172a; margin-bottom: 10px;">
+            Relevé détaillé des charges de la période
+        </h3>
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead>
+                    <tr style="background: #0f172a; color: #ffffff;">
+                        <th>N°</th>
+                        <th>Date</th>
+                        <th>Pièce</th>
+                        <th>Compte</th>
+                        <th>Description</th>
+                        <th>Fournisseur</th>
+                        <th>ICE</th>
+                        <th class="numeric">Net HT</th>
+                        <th>Taux</th>
+                        <th class="numeric">TVA Récupérable</th>
+                        <th class="numeric">Total TTC</th>
+                        <th>Statut TVA</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in purchases_data.rows %}
+                        <tr>
+                            <td>{{ r.order_num }}</td>
+                            <td>{{ r.expense_date|date:"d/m/Y" }}</td>
+                            <td><span style="font-family: monospace; font-weight: 600;">{{ r.piece }}</span></td>
+                            <td><span class="badge" style="background: #f1f5f9; color: #475569; font-size: 0.8rem;">{{ r.pcge_account }}</span></td>
+                            <td>
+                                <a href="{% url 'expense-detail' r.id %}" style="font-weight: 600; color: #1e3a8a;">
+                                    {{ r.description }}
+                                </a>
+                            </td>
+                            <td>{{ r.supplier_name }}</td>
+                            <td><small style="color: #64748b;">{{ r.supplier_ice }}</small></td>
+                            <td class="numeric">{{ r.base_ht|money }} MAD</td>
+                            <td>{{ r.tax_rate|floatformat:0 }} %</td>
+                            <td class="numeric" style="font-weight: 700; color: {% if r.vat_amount > 0 %}#2563eb{% else %}#94a3b8{% endif %};">
+                                {{ r.vat_amount|money }} MAD
+                            </td>
+                            <td class="numeric font-bold">{{ r.total_ttc|money }} MAD</td>
+                            <td>
+                                {% if not r.is_vat_recoverable %}
+                                    <span style="font-size: 0.75rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; background: #fef2f2; color: #991b1b;">
+                                        {{ r.vat_status_label }}
+                                    </span>
+                                {% else %}
+                                    <span style="font-size: 0.75rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; background: #ecfdf5; color: #065f46;">
+                                        {{ r.vat_status_label }}
+                                    </span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr style="background: #eff6ff; font-weight: 700; border-top: 2px solid #2563eb;">
+                        <td colspan="7">TOTAL DU JOURNAL DES ACHATS (AC)</td>
+                        <td class="numeric">{{ purchases_data.totals.total_ht|money }} MAD</td>
+                        <td>—</td>
+                        <td class="numeric" style="color: #2563eb; font-size: 1.05rem;">{{ purchases_data.totals.recoverable_vat|money }} MAD</td>
+                        <td class="numeric font-bold">{{ purchases_data.totals.total_ttc|money }} MAD</td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    {% else %}
+        <div style="text-align: center; padding: 40px 20px; color: #64748b;">
+            <p style="font-size: 2.2rem; margin: 0 0 10px 0;">🛒</p>
+            <h3 style="margin: 0 0 6px 0; color: #0f172a;">Aucune dépense enregistrée sur cette période</h3>
+            <p style="margin: 0; font-size: 0.95rem;">
+                Utilisez le bouton « Saisir une Dépense » pour enregistrer vos achats et notes de frais.
+            </p>
+        </div>
+    {% endif %}
+</section>
+{% endif %}

@@ -11,7 +11,9 @@ from .accounting_services import (
     build_csv_export,
     get_accounting_period_range,
     get_moroccan_vat_report_data,
+    get_non_deductible_expenses_data,
     get_payments_journal_data,
+    get_purchases_journal_data,
     get_sales_journal_data,
 )
 from .models import CompanySettings
@@ -51,7 +53,7 @@ def _get_filter_params(request):
         regime = "encaissement"
 
     active_tab = request.GET.get("tab", "tva")
-    if active_tab not in {"tva", "ventes", "reglements"}:
+    if active_tab not in {"tva", "ventes", "reglements", "reintegrations", "achats"}:
         active_tab = "tva"
 
     return year, period_type, period_value, regime, active_tab
@@ -66,6 +68,7 @@ def accounting_dashboard(request):
     vat_data = get_moroccan_vat_report_data(start_date, end_date, regime=regime)
     sales_data = get_sales_journal_data(start_date, end_date)
     payments_data = get_payments_journal_data(start_date, end_date)
+    non_deductible_data = get_non_deductible_expenses_data(start_date, end_date)
     company = CompanySettings.get_settings()
 
     current_year = timezone.localdate().year
@@ -99,6 +102,7 @@ def accounting_dashboard(request):
         "vat_data": vat_data,
         "sales_data": sales_data,
         "payments_data": payments_data,
+        "non_deductible_data": non_deductible_data,
     }
 
     # Détection AJAX pour rafraîchissement dynamique sans rechargement brutal de page
@@ -121,8 +125,11 @@ def export_fiduciary_pack_xlsx(request):
     vat_data = get_moroccan_vat_report_data(start_date, end_date, regime=regime)
     sales_data = get_sales_journal_data(start_date, end_date)
     payments_data = get_payments_journal_data(start_date, end_date)
+    non_deductible_data = get_non_deductible_expenses_data(start_date, end_date)
 
-    content = build_complete_fiduciary_pack_xlsx(period_label, vat_data, sales_data, payments_data)
+    content = build_complete_fiduciary_pack_xlsx(
+        period_label, vat_data, sales_data, payments_data, non_deductible_data=non_deductible_data
+    )
     safe_label = period_label.replace(" ", "_").replace("(", "").replace(")", "").replace("-", "_")
     filename = f"Pack_Fiduciaire_{safe_label}.xlsx"
 
@@ -200,6 +207,56 @@ def export_payments_csv(request):
     csv_bytes = build_csv_export(headers, payments_data["entries"], key_order)
     safe_label = period_label.replace(" ", "_")
     filename = f"Journal_Reglements_{safe_label}.csv"
+
+    response = HttpResponse(csv_bytes, content_type="text/csv; charset=utf-8-sig")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+@login_required
+@permission_required("finance.view_invoice", raise_exception=True)
+def export_reintegration_csv(request):
+    year, period_type, period_value, _, _ = _get_filter_params(request)
+    start_date, end_date, period_label = get_accounting_period_range(year, period_type, period_value)
+    reint_data = get_non_deductible_expenses_data(start_date, end_date)
+
+    headers = [
+        "N° Ordre", "Date Dépense", "Description / Pièce", "Catégorie", "Fournisseur",
+        "ICE Fournisseur", "Montant Comptable TTC (MAD)", "Montant Réintégré à l'IS (MAD)",
+        "Motif Légal (CGI Maroc)", "Observations / Justification"
+    ]
+    key_order = [
+        "order_num", "expense_date", "description", "category_name", "supplier_name",
+        "supplier_ice", "amount", "reintegration_amount", "reason_label", "fiscal_notes"
+    ]
+    csv_bytes = build_csv_export(headers, reint_data["rows"], key_order)
+    safe_label = period_label.replace(" ", "_").replace("(", "").replace(")", "").replace("-", "_")
+    filename = f"Reintegrations_IS_{safe_label}.csv"
+
+    response = HttpResponse(csv_bytes, content_type="text/csv; charset=utf-8-sig")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+@login_required
+@permission_required("finance.view_invoice", raise_exception=True)
+def export_purchases_csv(request):
+    year, period_type, period_value, _, _ = _get_filter_params(request)
+    start_date, end_date, period_label = get_accounting_period_range(year, period_type, period_value)
+    purchases_data = get_purchases_journal_data(start_date, end_date)
+
+    headers = [
+        "N°", "Date", "N° Pièce", "Compte PCGE", "Catégorie", "Fournisseur",
+        "ICE Fournisseur", "Description", "Mode Règlement", "Net HT (MAD)",
+        "Taux TVA (%)", "TVA Récupérable (MAD)", "Total TTC (MAD)", "Régime TVA (Art. 106)", "Déductibilité IS"
+    ]
+    key_order = [
+        "order_num", "expense_date", "piece", "pcge_account", "category_name",
+        "supplier_name", "supplier_ice", "description", "payment_method", "base_ht",
+        "tax_rate", "vat_amount", "total_ttc", "vat_status_label", "is_tax_deductible"
+    ]
+    csv_bytes = build_csv_export(headers, purchases_data["rows"], key_order)
+    safe_label = period_label.replace(" ", "_").replace("(", "").replace(")", "").replace("-", "_")
+    filename = f"Journal_Achats_AC_{safe_label}.csv"
 
     response = HttpResponse(csv_bytes, content_type="text/csv; charset=utf-8-sig")
     response["Content-Disposition"] = f'attachment; filename="{filename}"'

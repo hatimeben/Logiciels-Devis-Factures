@@ -1,35 +1,38 @@
 {% extends "finance/quotes/base.html" %}
-{% load finance_quotes static %}
-{% block title %}{{ page_title }}{% endblock %}
+{% load static %}
+{% block title %}{{ title }}{% endblock %}
 {% block content %}
 <div class="page-heading">
     <div>
-        <p class="eyebrow">DEVIS · BROUILLON</p>
-        <h1>{{ page_title }}</h1>
-        <p class="subheading">Les prix sont exprimés hors taxes. La taxe est facultative.</p>
+        <p class="eyebrow">VENTES · DEVIS</p>
+        <h1>{{ title }}</h1>
+        <p class="subheading">{{ subtitle }}</p>
     </div>
-    <a class="button quiet" href="{% if quote %}{% url 'quote-detail' quote.pk %}{% else %}{% url 'quote-list' %}{% endif %}">← Retour</a>
+    <a class="button quiet" href="{% if quote and quote.pk %}{% url 'quote-detail' quote.pk %}{% else %}{% url 'quote-list' %}{% endif %}">Annuler</a>
 </div>
 
-<form method="post" class="quote-form" novalidate>
+{% if form.errors or formset.non_form_errors %}
+    <div class="form-errors">
+        <p>Des erreurs empêchent l'enregistrement. Merci de vérifier les champs indiqués.</p>
+        {{ form.errors }}
+        {{ formset.non_form_errors }}
+    </div>
+{% endif %}
+
+<form method="post" class="stack" novalidate id="quote-form">
     {% csrf_token %}
-    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
     <section class="panel form-panel">
-        <div class="section-heading"><div><p class="eyebrow">INFORMATIONS</p><h2>Client et validité</h2></div></div>
-        <div class="form-grid">
-            {% for field in form %}
-                <div class="field {% if field.name == 'notes' %}field-wide{% endif %}">
-                    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-                    {{ field }}
-                    {% for error in field.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
-                </div>
-            {% endfor %}
+        <h2>Informations principales</h2>
+        <div class="grid grid-2">
+            <label><span>Client *</span>{{ form.customer }}</label>
+            <label><span>Projet</span>{{ form.project }}</label>
         </div>
+        <label><span>Notes / Conditions</span>{{ form.notes }}</label>
     </section>
 
     <section class="panel form-panel">
         <div class="section-heading">
-            <div><p class="eyebrow">PRESTATIONS</p><h2>Lignes du devis</h2></div>
+            <div><p class="eyebrow">PRESTATIONS & ARTICLES</p><h2>Lignes du devis</h2></div>
             <button class="button secondary" type="button" id="add-line">＋ Ajouter une ligne</button>
         </div>
         {{ formset.management_form }}
@@ -39,8 +42,13 @@
                 <article class="quote-line" data-line>
                     {% for hidden in line_form.hidden_fields %}{{ hidden }}{% endfor %}
                     <div class="line-fields">
+                        <div class="field field-article">
+                            <label for="{{ line_form.article.id_for_label }}">📦 Article en Stock</label>
+                            {{ line_form.article }}
+                            {% for error in line_form.article.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+                        </div>
                         <div class="field field-service">
-                            <label for="{{ line_form.service.id_for_label }}">Prestation du catalogue</label>
+                            <label for="{{ line_form.service.id_for_label }}">Ou Prestation</label>
                             {{ line_form.service }}
                             {% for error in line_form.service.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
                         </div>
@@ -66,14 +74,13 @@
                         <div class="field field-discount-value">
                             <label for="{{ line_form.discount_value.id_for_label }}">Remise</label>
                             {{ line_form.discount_value }}
-                            {% for error in line_form.discount_value.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
                         </div>
                         <div class="field field-tax">
                             <label for="{{ line_form.tax_rate.id_for_label }}">Taxe applicable</label>
                             {{ line_form.tax_rate }}
                         </div>
                         <div class="line-total">
-                            <span>Total HT de la ligne</span>
+                            <span>Total HT</span>
                             <strong data-line-total>0,00 MAD</strong>
                         </div>
                         {% if line_form.DELETE %}
@@ -88,7 +95,8 @@
             <article class="quote-line" data-line>
                 {% for hidden in formset.empty_form.hidden_fields %}{{ hidden }}{% endfor %}
                 <div class="line-fields">
-                    <div class="field field-service"><label for="{{ formset.empty_form.service.id_for_label }}">Prestation du catalogue</label>{{ formset.empty_form.service }}</div>
+                    <div class="field field-article"><label for="{{ formset.empty_form.article.id_for_label }}">📦 Article en Stock</label>{{ formset.empty_form.article }}</div>
+                    <div class="field field-service"><label for="{{ formset.empty_form.service.id_for_label }}">Ou Prestation</label>{{ formset.empty_form.service }}</div>
                     <div class="field field-description"><label for="{{ formset.empty_form.description.id_for_label }}">Désignation</label>{{ formset.empty_form.description }}</div>
                     <div class="field field-quantity"><label for="{{ formset.empty_form.quantity.id_for_label }}">Quantité</label>{{ formset.empty_form.quantity }}</div>
                     <div class="field field-price"><label for="{{ formset.empty_form.unit_price.id_for_label }}">Prix unitaire HT (MAD)</label>{{ formset.empty_form.unit_price }}</div>
@@ -103,19 +111,183 @@
     </section>
 
     <section class="panel totals-panel">
-        <p class="eyebrow">APERÇU CALCULÉ</p>
-        <div><span>Total brut HT</span><strong data-total-gross>0,00 MAD</strong></div>
-        <div><span>Remises</span><strong data-total-discount>0,00 MAD</strong></div>
-        <div><span>Total net HT</span><strong data-total-net>0,00 MAD</strong></div>
-        <div><span>Taxes</span><strong data-total-tax>0,00 MAD</strong></div>
-        <div class="grand-total"><span>Total TTC</span><strong data-total-total>0,00 MAD</strong></div>
-        <small>Les montants définitifs sont recalculés et validés côté serveur.</small>
+        <p class="eyebrow">RÉSUMÉ FINANCIER (DEVIS EN HT)</p>
+        <div class="totals-grid">
+            <div><span>Total brut HT</span><strong data-total-gross>0,00 MAD</strong></div>
+            <div><span>Remises</span><strong data-total-discount>0,00 MAD</strong></div>
+            <div class="grand-total"><span>Total Net HT</span><strong data-total-net>0,00 MAD</strong></div>
+            <div><span>TVA (estimée)</span><strong data-total-tax>0,00 MAD</strong></div>
+            <div style="color: #64748b; font-size: 0.9em;"><span>Total TTC (indicatif)</span><strong data-total-total>0,00 MAD</strong></div>
+        </div>
     </section>
 
-    <div class="form-actions">
+    <div class="actions">
         <button class="button primary" type="submit">Enregistrer le brouillon</button>
-        <a class="button quiet" href="{% if quote %}{% url 'quote-detail' quote.pk %}{% else %}{% url 'quote-list' %}{% endif %}">Annuler</a>
     </div>
 </form>
 {% endblock %}
-{% block scripts %}<script src="{% static 'finance/quotes.js' %}" defer></script>{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'finance/quotes.js' %}?v=20261101_1355" defer></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    function formatMAD(num) {
+        return new Intl.NumberFormat("fr-FR", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        }).format(num).replace(/\u202f/g, " ") + " MAD";
+    }
+
+    function calculateTotals() {
+        var rows = document.querySelectorAll("[data-line]");
+        var sumGross = 0;
+        var sumDiscount = 0;
+        var sumNet = 0;
+        var sumTax = 0;
+
+        rows.forEach(function(row) {
+            var del = row.querySelector('[name$="-DELETE"]');
+            if (del && del.checked) {
+                row.style.display = "none";
+                return;
+            }
+            row.style.display = "";
+
+            var qEl = row.querySelector('[name$="-quantity"]');
+            var pEl = row.querySelector('[name$="-unit_price"]');
+            var dtEl = row.querySelector('[name$="-discount_type"]');
+            var dvEl = row.querySelector('[name$="-discount_value"]');
+            var tEl = row.querySelector('[name$="-tax_rate"]');
+            var ltEl = row.querySelector("[data-line-total]");
+
+            var qty = parseFloat(qEl ? qEl.value.replace(",", ".") : 0) || 0;
+            var price = parseFloat(pEl ? pEl.value.replace(",", ".") : 0) || 0;
+            var discType = dtEl ? dtEl.value : "percentage";
+            var discVal = parseFloat(dvEl ? dvEl.value.replace(",", ".") : 0) || 0;
+
+            var taxPct = 0;
+            if (tEl && tEl.selectedIndex >= 0) {
+                var opt = tEl.options[tEl.selectedIndex];
+                var pct = opt.getAttribute("data-percentage") || (opt.dataset ? opt.dataset.percentage : "0");
+                taxPct = parseFloat(pct) || 0;
+            }
+
+            var lineGross = qty * price;
+            var lineDiscount = discType === "percentage" ? lineGross * (discVal / 100) : discVal;
+            lineDiscount = Math.min(lineGross, lineDiscount);
+
+            var lineNet = Math.max(0, lineGross - lineDiscount);
+            var lineTax = lineNet * (taxPct / 100);
+
+            sumGross += lineGross;
+            sumDiscount += lineDiscount;
+            sumNet += lineNet;
+            sumTax += lineTax;
+
+            if (ltEl) {
+                ltEl.textContent = formatMAD(lineNet);
+            }
+        });
+
+        var sumTTC = sumNet + sumTax;
+
+        var elGross = document.querySelector("[data-total-gross]");
+        var elDiscount = document.querySelector("[data-total-discount]");
+        var elNet = document.querySelector("[data-total-net]");
+        var elTax = document.querySelector("[data-total-tax]");
+        var elGrand = document.querySelector("[data-total-grand]");
+        var elTotal = document.querySelector("[data-total-total]");
+
+        if (elGross) elGross.textContent = formatMAD(sumGross);
+        if (elDiscount) elDiscount.textContent = formatMAD(sumDiscount);
+        if (elNet) elNet.textContent = formatMAD(sumNet);
+        if (elTax) elTax.textContent = formatMAD(sumTax);
+        if (elGrand) elGrand.textContent = formatMAD(sumTTC);
+        if (elTotal) elTotal.textContent = formatMAD(sumTTC);
+    }
+
+    function autoFillLine(selectEl) {
+        if (!selectEl || selectEl.tagName !== "SELECT") return;
+        var name = selectEl.name || "";
+        var isArticle = name.endsWith("-article");
+        var isService = name.endsWith("-service");
+        if (!isArticle && !isService) return;
+
+        var option = selectEl.options[selectEl.selectedIndex];
+        if (!option || !option.value) return;
+
+        var priceVal = option.getAttribute("data-unit-price") || (option.dataset ? option.dataset.unitPrice : "");
+        var descVal = option.getAttribute("data-description") || (option.dataset ? option.dataset.description : "");
+
+        var prefix = isArticle ? selectEl.id.replace(/-article$/, "") : selectEl.id.replace(/-service$/, "");
+        var descInput = document.getElementById(prefix + "-description");
+        var priceInput = document.getElementById(prefix + "-unit_price");
+        var qtyInput = document.getElementById(prefix + "-quantity");
+        var taxSelect = document.getElementById(prefix + "-tax_rate");
+
+        var row = selectEl.closest("[data-line]") || selectEl.closest(".quote-line");
+        if (row) {
+            if (!descInput) descInput = row.querySelector('[name$="-description"]');
+            if (!priceInput) priceInput = row.querySelector('[name$="-unit_price"]');
+            if (!qtyInput) qtyInput = row.querySelector('[name$="-quantity"]');
+            if (!taxSelect) taxSelect = row.querySelector('[name$="-tax_rate"]');
+        }
+
+        // 1. Désignation
+        if (descInput && descVal) {
+            descInput.value = descVal;
+        }
+
+        // 2. Prix unitaire HT
+        if (priceInput && priceVal !== null && priceVal !== undefined) {
+            priceInput.value = priceVal;
+        }
+
+        // 3. Quantité par défaut à 1 si vide ou <= 0
+        if (qtyInput) {
+            var curQty = parseFloat(qtyInput.value) || 0;
+            if (curQty <= 0) {
+                qtyInput.value = "1";
+            }
+        }
+
+        // 4. Pré-sélection de la taxe si disponible et non choisie
+        if (taxSelect && !taxSelect.value && taxSelect.options.length === 2) {
+            taxSelect.selectedIndex = 1;
+        }
+
+        // 5. Réinitialiser l'autre sélecteur
+        if (row) {
+            if (isArticle) {
+                var s = row.querySelector('[name$="-service"]');
+                if (s) s.value = "";
+            } else {
+                var a = row.querySelector('[name$="-article"]');
+                if (a) a.value = "";
+            }
+        }
+
+        // 6. Recalculer immédiatement
+        calculateTotals();
+    }
+
+    document.addEventListener("change", function(e) {
+        if (e.target && e.target.tagName === "SELECT") {
+            autoFillLine(e.target);
+        }
+        if (e.target && e.target.closest && e.target.closest("[data-line]")) {
+            calculateTotals();
+        }
+    });
+
+    document.addEventListener("input", function(e) {
+        if (e.target && e.target.closest && e.target.closest("[data-line]")) {
+            calculateTotals();
+        }
+    });
+
+    // Calcul immédiat
+    calculateTotals();
+});
+</script>
+{% endblock %}

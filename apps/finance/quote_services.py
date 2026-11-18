@@ -219,6 +219,7 @@ def create_quote_revision(source_quote_id, actor):
         for line in source.lines.all():
             revision.lines.create(
                 service=line.service,
+                article=line.article,
                 description=line.description,
                 quantity=line.quantity,
                 unit_price=line.unit_price,
@@ -249,3 +250,63 @@ def create_quote_revision(source_quote_id, actor):
             },
         )
         return revision
+
+
+def clone_quote(source_quote_id, target_customer_id, actor):
+    """
+    Duplique un devis existant sous la forme d'un nouveau devis brouillon,
+    soit pour le même client, soit pour un client différent.
+    Copie toutes les lignes (prestations, articles, prix, remises, taxes).
+    """
+    from datetime import date, timedelta
+    from apps.partners.models import Customer
+
+    with transaction.atomic():
+        source = Quote.objects.prefetch_related("lines").get(pk=source_quote_id)
+        target_customer = Customer.objects.get(pk=target_customer_id)
+
+        target_snapshot = {
+            "name": target_customer.name,
+            "email": target_customer.email,
+            "phone": target_customer.phone,
+            "address": target_customer.address,
+            "city": target_customer.city,
+            "country": target_customer.country,
+            "ice": getattr(target_customer, "ice", ""),
+            "tax_identifier": target_customer.tax_identifier,
+        }
+
+        cloned_quote = Quote.objects.create(
+            customer=target_customer,
+            project=source.project if source.customer_id == target_customer.id else None,
+            status=Quote.Status.DRAFT,
+            customer_snapshot=target_snapshot,
+            valid_until=date.today() + timedelta(days=30),
+            notes=source.notes,
+        )
+        for line in source.lines.all():
+            cloned_quote.lines.create(
+                service=line.service,
+                article=line.article,
+                description=line.description,
+                quantity=line.quantity,
+                unit_price=line.unit_price,
+                discount_type=line.discount_type,
+                discount_value=line.discount_value,
+                tax_rate=line.tax_rate,
+                tax_percentage=line.tax_percentage,
+                tax_name=line.tax_name,
+                position=line.position,
+            )
+        DocumentHistory.objects.create(
+            quote=cloned_quote,
+            event=DocumentHistory.Event.CREATED,
+            actor=actor,
+            snapshot={
+                "cloned_from_quote_id": source.pk,
+                "cloned_from_quote_number": source.number or f"Brouillon #{source.pk}",
+                "after": quote_snapshot(cloned_quote),
+                "actor_username": actor.get_username(),
+            },
+        )
+        return cloned_quote

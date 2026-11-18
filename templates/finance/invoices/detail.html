@@ -11,6 +11,7 @@
     <div class="heading-actions">
         <a class="button quiet" href="{% url 'invoice-list' %}">← Liste</a>
         <a class="button secondary" href="{% url 'invoice-pdf' invoice.pk %}">{% if invoice.status == "draft" %}Aperçu PDF · brouillon{% else %}Télécharger le PDF{% endif %}</a>
+        <a class="button secondary" href="{% url 'invoice-docx' invoice.pk %}" title="Télécharger la facture au format Word">📄 Télécharger Word (.docx)</a>
         {% if invoice.status == "draft" and can_change %}
             <a class="button secondary" href="{% url 'invoice-edit' invoice.pk %}">Modifier le brouillon</a>
             <form method="post" action="{% url 'invoice-issue' invoice.pk %}">
@@ -21,14 +22,78 @@
         {% if can_add_payment %}
             <a class="button primary" href="{% url 'invoice-payment' invoice.pk %}">＋ Enregistrer un règlement</a>
         {% endif %}
+        {% if can_create_credit_note %}
+            <a class="button secondary" href="{% url 'credit-note-create' invoice.pk %}" title="Établir une note d'avoir (retour de marchandise, geste commercial)">↩️ Établir un avoir</a>
+        {% endif %}
+        {% if can_cancel %}
+            <button type="button" class="button danger" onclick="document.getElementById('cancel-invoice-modal').showModal();">❌ Annuler la facture</button>
+        {% endif %}
+        {% if can_add %}
+            <button type="button" class="button secondary" onclick="document.getElementById('clone-invoice-modal').showModal();" title="Dupliquer cette facture pour ce client ou un autre client">📋 Cloner la facture</button>
+        {% endif %}
     </div>
 </div>
+
+{% if invoice.status == "cancelled" %}
+<div class="panel" style="background-color: #fef2f2; border: 1px solid #f87171; border-radius: 8px; padding: 16px; margin-bottom: 24px; color: #991b1b;">
+    <div style="display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px;">
+        <span>🚫</span> <span>FACTURE ANNULÉE</span>
+    </div>
+    <p style="margin: 8px 0 0 0; font-size: 14px; color: #b91c1c;">
+        Cette facture a été annulée. Conformément aux dispositions légales et comptables, elle est conservée pour l'historique et la traçabilité sans pouvoir être modifiée ni encaissée. Le stock d'articles associé a été réintégré.
+    </p>
+</div>
+{% endif %}
+
+{% if not customer_snapshot.ice and not invoice.customer.ice %}
+<div class="panel" style="background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #d97706; border-radius: 8px; padding: 14px 18px; margin-bottom: 24px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 1.5rem;">⚠️</span>
+            <div>
+                <strong style="color: #92400e; font-size: 0.95rem;">ICE client manquant (Obligation légale Art. 145 CGI Maroc) :</strong>
+                <p style="margin: 2px 0 0 0; font-size: 0.85rem; color: #78350f;">
+                    L'ICE (Identifiant Commun de l'Entreprise) doit obligatoirement figurer sur la facture pour que votre client puisse légalement déduire cette charge et récupérer la TVA.
+                </p>
+            </div>
+        </div>
+        {% if can_change %}
+            <button type="button" class="button primary" onclick="document.getElementById('edit-ice-modal').showModal();" style="background: #d97706; border-color: #b45309; font-size: 0.85rem; padding: 6px 14px; cursor: pointer;">
+                ✏️ Renseigner l'ICE (15 chiffres)
+            </button>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
 
 <section class="summary-grid">
     <article class="panel summary-card">
         <span>Client</span>
         <strong>{{ customer_snapshot.name }}</strong>
-        <small>{{ customer_snapshot.email|default:"" }}</small>
+        <div style="margin: 5px 0;">
+            {% if customer_snapshot.ice %}
+                <span class="badge" style="background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; font-size: 0.82rem; font-weight: 700; padding: 2px 8px; border-radius: 4px;">
+                    ICE : {{ customer_snapshot.ice }}
+                </span>
+            {% elif invoice.customer.ice %}
+                <span class="badge" style="background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; font-size: 0.82rem; font-weight: 700; padding: 2px 8px; border-radius: 4px;">
+                    ICE : {{ invoice.customer.ice }}
+                </span>
+            {% else %}
+                <span class="badge" style="background: #fffbeb; color: #b45309; border: 1px solid #fde68a; font-size: 0.82rem; font-weight: 700; padding: 2px 8px; border-radius: 4px;">
+                    ⚠️ ICE manquant
+                </span>
+                {% if can_change %}
+                    <button type="button" class="button button-sm quiet" onclick="document.getElementById('edit-ice-modal').showModal();" style="margin-top: 4px; padding: 2px 8px; font-size: 0.78rem; text-decoration: underline; color: #2563eb; display: block; cursor: pointer;">
+                        ✏️ Renseigner l'ICE →
+                    </button>
+                {% endif %}
+            {% endif %}
+        </div>
+        <small>
+            {% if customer_snapshot.city %}{{ customer_snapshot.city }} · {% endif %}
+            {{ customer_snapshot.email|default:"" }}
+        </small>
     </article>
     <article class="panel summary-card">
         <span>Date d’émission & Échéance</span>
@@ -57,7 +122,7 @@
                 {% endif %}
             {% endif %}
         </strong>
-        <small>Total TTC : {{ totals.total|money }} MAD · Réglé : {{ invoice.total_paid|money }} MAD</small>
+        <small>Total TTC : {{ totals.total|money }} MAD · Réglé : {{ invoice.total_paid|money }} MAD{% if invoice.total_credited > 0 %} · Avoirs : -{{ invoice.total_credited|money }} MAD{% endif %}</small>
     </article>
 </section>
 
@@ -184,6 +249,68 @@
 </section>
 {% endif %}
 
+{% if credit_notes or can_create_credit_note %}
+<section class="panel table-panel">
+    <div class="section-heading">
+        <div><p class="eyebrow">NOTES DE CRÉDIT & RETOURS</p><h2>Avoirs rattachés</h2></div>
+        {% if can_create_credit_note %}
+            <a class="button secondary" href="{% url 'credit-note-create' invoice.pk %}">↩️ Établir un avoir</a>
+        {% endif %}
+    </div>
+
+    {% if credit_notes %}
+        <div class="table-scroll">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>N° d'avoir</th>
+                        <th>Date d'émission</th>
+                        <th>Motif</th>
+                        <th>Statut</th>
+                        <th class="numeric">Montant TTC</th>
+                        <th class="numeric">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for cn in credit_notes %}
+                        <tr>
+                            <td>
+                                <a href="{% url 'credit-note-detail' cn.pk %}" style="font-weight: 700; color: #1e3a8a;">
+                                    {{ cn.number|default:"Brouillon" }}
+                                </a>
+                            </td>
+                            <td>{{ cn.issue_date|date:"d/m/Y"|default:"—" }}</td>
+                            <td>{{ cn.get_reason_display }}</td>
+                            <td>
+                                {% if cn.status == "issued" %}
+                                    <span class="pay-method-badge" style="background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0;">✓ Émis</span>
+                                {% else %}
+                                    <span class="pay-method-badge" style="background: #fef3c7; color: #92400e; border: 1px solid #fde68a;">📝 Brouillon</span>
+                                {% endif %}
+                            </td>
+                            <td class="numeric">
+                                <strong style="color: #991b1b;">− {{ cn.total_ttc|money }} MAD</strong>
+                            </td>
+                            <td class="numeric">
+                                <a class="button quiet button-sm" href="{% url 'credit-note-detail' cn.pk %}">Consulter</a>
+                                {% if cn.status == "issued" %}
+                                    <a class="button quiet button-sm" href="{% url 'credit-note-pdf' cn.pk %}">PDF</a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="detail-totals">
+            <div><span>Total avoirs validés</span><strong style="color: #991b1b;">− {{ invoice.total_credited|money }} MAD</strong></div>
+        </div>
+    {% else %}
+        <p class="empty-inline">Aucun avoir établi pour cette facture.</p>
+    {% endif %}
+</section>
+{% endif %}
+
 {% if invoice.notes %}
     <section class="panel form-panel">
         <p class="eyebrow">NOTES</p>
@@ -215,6 +342,19 @@
 </section>
 {% endif %}
 
+{% if company.stamp %}
+<section class="panel form-panel" style="display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px;">
+    <div>
+        <p class="eyebrow">AUTHENTIFICATION</p>
+        <h3 style="margin: 0 0 6px 0; font-size: 16px;">Cachet officiel de l'entreprise</h3>
+        <p style="margin: 0; font-size: 13px; color: var(--muted, #64748b);">Cette facture comporte le cachet officiel et la signature de <strong>{{ company.name }}</strong> lors de l'exportation PDF & Word.</p>
+    </div>
+    <div style="background: #ffffff; padding: 10px 16px; border: 1px dashed #cbd5e1; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.04);">
+        <img src="{{ company.stamp.url }}" alt="Cachet {{ company.name }}" style="max-height: 75px; max-width: 170px; object-fit: contain; transform: rotate(-2deg);">
+    </div>
+</section>
+{% endif %}
+
 <section class="panel form-panel">
     <div class="section-heading"><div><p class="eyebrow">TRAÇABILITÉ</p><h2>Historique</h2></div></div>
     {% if history %}
@@ -233,4 +373,79 @@
         <p class="empty-inline">Aucun événement enregistré.</p>
     {% endif %}
 </section>
+
+{% if can_cancel %}
+<dialog id="cancel-invoice-modal" class="modal-dialog" style="border: 1px solid var(--border-color, #e2e8f0); border-radius: 12px; padding: 24px; max-width: 500px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); background: #ffffff;">
+    <form method="post" action="{% url 'invoice-cancel' invoice.pk %}">
+        {% csrf_token %}
+        <h3 style="margin-top: 0; color: #b91c1c; font-size: 18px;">⚠️ Annuler la facture {{ invoice.number }}</h3>
+        <p style="font-size: 14px; color: #475569; line-height: 1.5;">
+            Attention : Cette action marquera la facture <strong>{{ invoice.number }}</strong> comme <strong>Annulée</strong>.
+            Les quantités de stock d'articles sorties lors de l'émission seront automatiquement <strong>réintégrées</strong>.
+        </p>
+        <div style="margin: 16px 0;">
+            <label for="cancel-motif" style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Motif de l'annulation (obligatoire) :</label>
+            <textarea id="cancel-motif" name="motif" required rows="3" style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px; font-family: inherit; font-size: 14px; box-sizing: border-box;" placeholder="Ex : Erreur de facturation, prestation ou commande annulée..."></textarea>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 20px;">
+            <button type="button" class="button quiet" onclick="document.getElementById('cancel-invoice-modal').close();">Fermer</button>
+            <button type="submit" class="button danger">Confirmer l'annulation</button>
+        </div>
+    </form>
+</dialog>
+{% endif %}
+
+{% if can_add %}
+<dialog id="clone-invoice-modal" class="modal-dialog" style="border: 1px solid var(--border-color, #e2e8f0); border-radius: 12px; padding: 24px; max-width: 500px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); background: #ffffff;">
+    <form method="post" action="{% url 'invoice-clone' invoice.pk %}">
+        {% csrf_token %}
+        <h3 style="margin-top: 0; color: #0f172a; font-size: 18px;">📋 Dupliquer la facture {{ invoice.number|default:invoice.pk }}</h3>
+        <p style="font-size: 14px; color: #475569; line-height: 1.5;">
+            Cette action créera une <strong>nouvelle facture brouillon</strong> reprenant l'intégralité des lignes facturées, prête à être ajustée ou émise.
+        </p>
+        <div style="margin: 16px 0;">
+            <label for="clone-inv-target-customer" style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Client destinataire :</label>
+            <select id="clone-inv-target-customer" name="customer_id" required style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px; font-family: inherit; font-size: 14px; background: #fff;">
+                {% for c in customers %}
+                    <option value="{{ c.pk }}" {% if c.pk == invoice.customer_id %}selected{% endif %}>
+                        {{ c.name }}{% if c.city %} ({{ c.city }}){% endif %}
+                    </option>
+                {% endfor %}
+            </select>
+            <small style="display: block; color: #64748b; font-size: 12px; margin-top: 4px;">Vous pouvez conserver le client actuel ou en choisir un nouveau.</small>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px;">
+            <button type="button" class="button quiet" onclick="document.getElementById('clone-invoice-modal').close();">Annuler</button>
+            <button type="submit" class="button primary">Créer la facture dupliquée</button>
+        </div>
+    </form>
+</dialog>
+{% endif %}
+
+<dialog id="edit-ice-modal" class="modal-card" style="padding: 24px; border-radius: 12px; border: 1px solid #cbd5e1; max-width: 480px; width: 90%;">
+    <form method="post" action="{% url 'invoice-update-ice' invoice.pk %}">
+        {% csrf_token %}
+        <h3 style="margin-top: 0; color: #0f172a; font-size: 1.15rem;">✏️ Renseigner l'ICE du Client</h3>
+        <p style="font-size: 0.88rem; color: #64748b; margin-bottom: 16px;">
+            Client : <strong>{{ customer_snapshot.name }}</strong><br>
+            L'ICE marocain est composé de <strong>15 chiffres</strong> attribués par l'administration marocaine.
+        </p>
+        <div style="margin-bottom: 16px;">
+            <label for="id_customer_ice" style="display: block; font-weight: 600; font-size: 0.85rem; margin-bottom: 6px;">
+                Identifiant Commun de l'Entreprise (ICE) :
+            </label>
+            <input type="text" id="id_customer_ice" name="ice" value="{{ customer_snapshot.ice|default:invoice.customer.ice|default:'' }}"
+                   placeholder="Ex: 003669285000061 (15 chiffres)"
+                   pattern="[0-9]{15}" maxlength="15" required
+                   style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; font-family: monospace; font-size: 1.05rem; letter-spacing: 1px; box-sizing: border-box;">
+            <small style="color: #64748b; font-size: 0.78rem; display: block; margin-top: 4px;">
+                Cette valeur sera enregistrée sur la fiche client et appliquée immédiatement à cette facture (PDF, Word & écran).
+            </small>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+            <button type="button" class="button quiet" onclick="document.getElementById('edit-ice-modal').close();">Annuler</button>
+            <button type="submit" class="button primary">Enregistrer et Appliquer</button>
+        </div>
+    </form>
+</dialog>
 {% endblock %}

@@ -3,34 +3,265 @@
 {% block content %}
 <div class="page-heading">
     <div>
-        <p class="eyebrow">DÉPENSE</p>
+        <p class="eyebrow">DÉPENSE · COMPTABILITÉ</p>
         <h1>{{ page_title }}</h1>
-        <p class="subheading">Enregistrez les informations de la charge et joignez le justificatif.</p>
+        <p class="subheading">Enregistrez les informations de la charge, son traitement fiscal (IS) et joignez le justificatif.</p>
     </div>
     <a class="button quiet" href="{% if expense %}{% url 'expense-detail' expense.pk %}{% else %}{% url 'expense-list' %}{% endif %}">← Retour</a>
 </div>
 
-<form method="post" enctype="multipart/form-data" class="quote-form" novalidate>
+<form method="post" enctype="multipart/form-data" class="quote-form" novalidate id="expenseForm">
     {% csrf_token %}
+    <input type="hidden" name="fiscal_submitted" value="1">
     {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
 
+    <!-- 1. Informations générales de la dépense -->
     <section class="panel form-panel">
         <div class="section-heading"><div><p class="eyebrow">DÉTAIL DE LA CHARGE</p><h2>Informations générales</h2></div></div>
         <div class="form-grid">
-            {% for field in form %}
-                <div class="field {% if field.name == 'description' %}field-wide{% endif %}">
-                    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-                    {{ field }}
-                    {% for error in field.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
-                </div>
-            {% endfor %}
+            <div class="field field-wide">
+                <label for="{{ form.description.id_for_label }}">{{ form.description.label }} *</label>
+                {{ form.description }}
+                {% for error in form.description.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+            </div>
+            <div class="field">
+                <label for="{{ form.category.id_for_label }}">{{ form.category.label }} *</label>
+                {{ form.category }}
+                {% for error in form.category.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+            </div>
+            <div class="field">
+                <label for="{{ form.supplier.id_for_label }}">{{ form.supplier.label }}</label>
+                {{ form.supplier }}
+                {% for error in form.supplier.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+            </div>
+            <div class="field">
+                <label for="{{ form.expense_date.id_for_label }}">{{ form.expense_date.label }} *</label>
+                {{ form.expense_date }}
+                {% for error in form.expense_date.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+            </div>
+            <div class="field">
+                <label for="{{ form.amount.id_for_label }}">{{ form.amount.label }} (TTC) *</label>
+                {{ form.amount }}
+                {% for error in form.amount.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+            </div>
+            <div class="field">
+                <label for="{{ form.project.id_for_label }}">{{ form.project.label }}</label>
+                {{ form.project }}
+                {% for error in form.project.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+            </div>
+            <div class="field">
+                <label for="{{ form.receipt.id_for_label }}">{{ form.receipt.label }}</label>
+                {{ form.receipt }}
+                {% for error in form.receipt.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+            </div>
         </div>
     </section>
 
-    <div class="form-actions">
+    <!-- 2. Fiscalité & Déductibilité IS (CGI Maroc) -->
+    <section class="panel form-panel" style="margin-top: 24px; border: 1px solid #cbd5e1;">
+        <div class="section-heading">
+            <div>
+                <p class="eyebrow">FISCALITÉ & LIASSE FISCALE (IS)</p>
+                <h2>Traitement fiscal & Réintégration (CGI Maroc)</h2>
+            </div>
+        </div>
+
+        <div style="background: #f8fafc; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 20px;">
+            <label style="display: flex; align-items: center; gap: 12px; font-weight: 700; font-size: 15px; color: #0f172a; cursor: pointer;">
+                {{ form.is_tax_deductible }}
+                <span>Cette charge est intégralement déductible fiscalement à l'IS</span>
+            </label>
+            <p style="margin: 6px 0 0 28px; font-size: 13px; color: #64748b;">
+                Décochez cette option si la dépense doit être réintégrée en tout ou en partie au résultat fiscal (ex: amende, pénalité, cadeau client sans logo, dépense somptuaire, justificatif non probant...).
+            </p>
+            {% for error in form.is_tax_deductible.errors %}<small class="field-error" style="margin-left: 28px;">{{ error }}</small>{% endfor %}
+        </div>
+
+        <div id="autoFiscalBanner" style="display: none; padding: 10px 14px; border-radius: 6px; margin-bottom: 14px; font-size: 13.5px; font-weight: 600;"></div>
+<div id="supplierIceWarning" style="display: none; padding: 10px 14px; background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; border-radius: 6px; margin-bottom: 14px; font-size: 13px;"></div>
+<div id="nonDeductibleDetailsBox" style="display: none; padding: 18px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; margin-bottom: 16px;">
+            <div style="font-weight: 700; color: #92400e; font-size: 14px; margin-bottom: 12px;">
+                ⚠️ Paramètres de réintégration fiscale (Tableau N°3 DGI) :
+            </div>
+            <div class="form-grid">
+                <div class="field">
+                    <label for="{{ form.non_deductible_reason.id_for_label }}">{{ form.non_deductible_reason.label }} *</label>
+                    {{ form.non_deductible_reason }}
+                    {% for error in form.non_deductible_reason.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+                </div>
+                <div class="field">
+                    <label for="{{ form.non_deductible_amount.id_for_label }}">{{ form.non_deductible_amount.label }}</label>
+                    {{ form.non_deductible_amount }}
+                    <small style="font-size: 11.5px; color: #78350f;">Laisser à 0,00 MAD si la totalité du montant est à réintégrer.</small>
+                    {% for error in form.non_deductible_amount.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+                </div>
+                <div class="field field-wide">
+                    <label for="{{ form.fiscal_notes.id_for_label }}">{{ form.fiscal_notes.label }}</label>
+                    {{ form.fiscal_notes }}
+                    {% for error in form.fiscal_notes.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <div class="form-actions" style="margin-top: 24px;">
         <button class="button primary" type="submit">Enregistrer la dépense</button>
         <a class="button quiet" href="{% if expense %}{% url 'expense-detail' expense.pk %}{% else %}{% url 'expense-list' %}{% endif %}">Annuler</a>
     </div>
 </form>
-{% endblock %}
 
+<script>
+const categoryFiscalMap = {
+    {% for cat in form.category.field.queryset %}
+        "{{ cat.pk }}": {
+            name: "{{ cat.name|escapejs }}",
+            pcge: "{{ cat.pcge_account|escapejs }}",
+            deductible: {{ cat.is_tax_deductible_default|yesno:"true,false" }},
+            reason: "{{ cat.default_non_deductible_reason|escapejs }}"
+        },
+    {% endfor %}
+};
+
+const supplierIceMap = {
+    {% for sup in form.supplier.field.queryset %}
+        "{{ sup.pk }}": {
+            name: "{{ sup.name|escapejs }}",
+            ice: "{{ sup.ice|default:''|escapejs }}"
+        },
+    {% endfor %}
+};
+
+document.addEventListener('DOMContentLoaded', function() {
+    var toggle = document.querySelector('.fiscal-deductible-toggle');
+    var box = document.getElementById('nonDeductibleDetailsBox');
+    var reasonSelect = document.querySelector('.fiscal-reason-select');
+    var banner = document.getElementById('autoFiscalBanner');
+    var iceWarning = document.getElementById('supplierIceWarning');
+    var categorySelect = document.getElementById('{{ form.category.id_for_label }}');
+    var supplierSelect = document.getElementById('{{ form.supplier.id_for_label }}');
+    var descInput = document.getElementById('{{ form.description.id_for_label }}');
+
+    function syncFiscalBox() {
+        if (!toggle || !box) return;
+        if (!toggle.checked) {
+            box.style.display = 'block';
+        } else {
+            box.style.display = 'none';
+        }
+    }
+
+    var isUserManualOverride = false;
+
+    // Évaluation bidirectionnelle intelligente
+    function evaluateFiscalDeductibility(triggeredBy) {
+        if (!toggle) return;
+
+        var text = (descInput ? descInput.value || '' : '').toLowerCase();
+        var keywords = ['amende', 'contravention', 'radar', 'pénalité', 'penalite', 'majoration', 'fourrière', 'fourriere', 'infraction'];
+        var keywordFound = keywords.some(function(kw) { return text.indexOf(kw) !== -1; });
+
+        var catId = categorySelect ? categorySelect.value : null;
+        var catInfo = (catId && categoryFiscalMap[catId]) ? categoryFiscalMap[catId] : null;
+        var categoryIsNonDeductible = catInfo && !catInfo.deductible;
+
+        if (categoryIsNonDeductible) {
+            // Règle 1 : Catégorie non déductible prioritaire
+            toggle.checked = false;
+            if (reasonSelect && catInfo.reason) {
+                reasonSelect.value = catInfo.reason;
+            }
+            syncFiscalBox();
+            if (banner) {
+                banner.style.display = 'block';
+                banner.style.background = '#fef2f2';
+                banner.style.border = '1px solid #fecdd3';
+                banner.style.color = '#991b1b';
+                banner.innerHTML = '⚡ <strong>Automatisation active :</strong> La catégorie « ' + catInfo.name + ' » (Compte PCGE ' + catInfo.pcge + ') est <strong>100% non déductible</strong> (Art. 11-I CGI).';
+            }
+            isUserManualOverride = false;
+        } else if (keywordFound) {
+            // Règle 2 : Mot-clé d'amende détecté dans la description
+            toggle.checked = false;
+            if (reasonSelect) {
+                reasonSelect.value = 'fines_penalties';
+            }
+            syncFiscalBox();
+            if (banner) {
+                banner.style.display = 'block';
+                banner.style.background = '#fffbeb';
+                banner.style.border = '1px solid #fde68a';
+                banner.style.color = '#92400e';
+                banner.innerHTML = '💡 <strong>Détection automatique :</strong> Mot-clé d\'amende / pénalité détecté dans le libellé ➔ Réintégration fiscale IS appliquée (Art. 11-I CGI).';
+            }
+            isUserManualOverride = false;
+        } else {
+            // Règle 3 : Ni amende ni catégorie non déductible
+            // Si le changement vient du changement de catégorie ou si l'utilisateur n'avait pas manuellement forcé
+            if (triggeredBy === 'category' || !isUserManualOverride) {
+                toggle.checked = true;
+                if (reasonSelect) {
+                    reasonSelect.value = 'none';
+                }
+                syncFiscalBox();
+                if (banner) {
+                    if (catInfo && catInfo.pcge === '61251') {
+                        banner.style.display = 'block';
+                        banner.style.background = '#f0fdf4';
+                        banner.style.border = '1px solid #bbf7d0';
+                        banner.style.color = '#166534';
+                        banner.innerHTML = '⛽ <strong>Règle Carburant (Art. 106-I-2° CGI) :</strong> Déductible à 100% de l\'IS (résultat fiscal), mais la TVA n\'est pas récupérable. Le montant sera enregistré en TTC pur dans vos charges d\'exploitation.';
+                    } else {
+                        banner.style.display = 'none';
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Contrôle de conformité ICE Fournisseur (Art. 146 CGI)
+    function checkSupplierIce() {
+        if (!supplierSelect || !iceWarning) return;
+        var supId = supplierSelect.value;
+        if (supId && supplierIceMap[supId]) {
+            var supInfo = supplierIceMap[supId];
+            if (!supInfo.ice || supInfo.ice.trim() === '') {
+                iceWarning.style.display = 'block';
+                iceWarning.innerHTML = '⚠️ <strong>Contrôle fiscal (Art. 146 CGI) :</strong> Le fournisseur « ' + supInfo.name + ' » n\'a pas d\'identifiant ICE renseigné. L\'administration fiscale exige l\'ICE pour la déductibilité de la charge.';
+            } else {
+                iceWarning.style.display = 'none';
+            }
+        } else {
+            iceWarning.style.display = 'none';
+        }
+    }
+
+    if (toggle) {
+        toggle.addEventListener('change', function() {
+            isUserManualOverride = true;
+            syncFiscalBox();
+            if (toggle.checked && banner) {
+                banner.style.display = 'none';
+            }
+        });
+        syncFiscalBox();
+    }
+
+    if (categorySelect) {
+        categorySelect.addEventListener('change', function() {
+            evaluateFiscalDeductibility('category');
+        });
+    }
+
+    if (descInput) {
+        descInput.addEventListener('input', function() {
+            evaluateFiscalDeductibility('description');
+        });
+    }
+
+    if (supplierSelect) {
+        supplierSelect.addEventListener('change', checkSupplierIce);
+        checkSupplierIce();
+    }
+});
+</script>
+{% endblock %}

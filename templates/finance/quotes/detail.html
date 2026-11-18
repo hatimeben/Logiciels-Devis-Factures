@@ -11,9 +11,16 @@
     <div class="heading-actions">
         <a class="button quiet" href="{% url 'quote-list' %}">← Liste</a>
         <a class="button secondary" href="{% url 'quote-pdf' quote.pk %}">{% if quote.status == "draft" %}Aperçu PDF · brouillon{% else %}Télécharger le PDF{% endif %}</a>
+        <a class="button secondary" href="{% url 'quote-docx' quote.pk %}" title="Télécharger le devis modifiable au format Word">📄 Télécharger Word (.docx)</a>
         {% if quote.status == "draft" and can_edit %}<a class="button secondary" href="{% url 'quote-edit' quote.pk %}">Modifier le brouillon</a>{% endif %}
         {% if quote.status == "draft" and can_edit %}
-            <form method="post" action="{% url 'quote-send' quote.pk %}">{% csrf_token %}<button class="button primary" type="submit">Envoyer le devis</button></form>
+            <form method="post" action="{% url 'quote-send' quote.pk %}" style="display: inline;">{% csrf_token %}<button class="button primary" type="submit">Envoyer le devis</button></form>
+        {% endif %}
+        {% if quote.status == "draft" and can_delete %}
+            <form method="post" action="{% url 'quote-delete' quote.pk %}" onsubmit="return confirm('Êtes-vous sûr de vouloir supprimer définitivement ce devis brouillon ?');" style="display: inline;">
+                {% csrf_token %}
+                <button class="button danger" type="submit">Supprimer le brouillon</button>
+            </form>
         {% endif %}
         {% if can_convert %}
             <form method="post" action="{% url 'invoice-convert' quote.pk %}" style="display: inline;">
@@ -26,19 +33,42 @@
             <a class="button secondary" href="{% url 'invoice-detail' quote.invoice.pk %}">Voir la facture liée</a>
         {% endif %}
         {% if quote.status == "sent" and can_edit %}
-            <form method="post" action="{% url 'quote-change-status' quote.pk %}">{% csrf_token %}<input type="hidden" name="status" value="accepted"><button class="button primary" type="submit">Marquer accepté</button></form>
-            <form method="post" action="{% url 'quote-change-status' quote.pk %}">{% csrf_token %}<input type="hidden" name="status" value="rejected"><button class="button danger" type="submit">Marquer refusé</button></form>
+            <form method="post" action="{% url 'quote-change-status' quote.pk %}" style="display: inline;">{% csrf_token %}<input type="hidden" name="status" value="accepted"><button class="button primary" type="submit">Marquer accepté</button></form>
+            <form method="post" action="{% url 'quote-change-status' quote.pk %}" style="display: inline;">{% csrf_token %}<input type="hidden" name="status" value="rejected"><button class="button secondary" type="submit">Marquer refusé</button></form>
+            <form method="post" action="{% url 'quote-change-status' quote.pk %}" onsubmit="return confirm('Êtes-vous sûr de vouloir annuler ce devis envoyé ?');" style="display: inline;">{% csrf_token %}<input type="hidden" name="status" value="cancelled"><button class="button danger" type="submit">Annuler le devis</button></form>
         {% endif %}
         {% if quote.status == "sent" or quote.status == "accepted" %}
             {% if can_add %}
                 <form method="post" action="{% url 'quote-revision' quote.pk %}">{% csrf_token %}<button class="button secondary" type="submit">Créer une nouvelle version</button></form>
             {% endif %}
         {% endif %}
+        {% if can_add %}
+            <button type="button" class="button secondary" onclick="document.getElementById('clone-quote-modal').showModal();" title="Dupliquer ce devis pour ce client ou un autre client">📋 Cloner ce devis</button>
+        {% endif %}
     </div>
 </div>
 
 <section class="summary-grid">
-    <article class="panel summary-card"><span>Client</span><strong>{{ customer_snapshot.name }}</strong><small>{{ customer_snapshot.email|default:"" }}</small></article>
+    <article class="panel summary-card">
+        <span>Client</span>
+        <strong>{{ customer_snapshot.name }}</strong>
+        <div style="margin: 4px 0;">
+            {% if customer_snapshot.ice %}
+                <span class="badge" style="background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; font-size: 0.82rem; font-weight: 700; padding: 2px 8px; border-radius: 4px;">
+                    ICE : {{ customer_snapshot.ice }}
+                </span>
+            {% elif quote.customer.ice %}
+                <span class="badge" style="background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; font-size: 0.82rem; font-weight: 700; padding: 2px 8px; border-radius: 4px;">
+                    ICE : {{ quote.customer.ice }}
+                </span>
+            {% else %}
+                <span class="badge" style="background: #fffbeb; color: #b45309; border: 1px solid #fde68a; font-size: 0.82rem; font-weight: 700; padding: 2px 8px; border-radius: 4px;">
+                    ⚠️ ICE non renseigné
+                </span>
+            {% endif %}
+        </div>
+        <small>{% if customer_snapshot.city %}{{ customer_snapshot.city }} · {% endif %}{{ customer_snapshot.email|default:"" }}</small>
+    </article>
     <article class="panel summary-card"><span>Date d'émission</span><strong>{{ quote.issue_date|date:"d/m/Y"|default:"—" }}</strong><small>Créé le {{ quote.created_at|date:"d/m/Y" }}</small></article>
     {% if quote.valid_until %}
         <article class="panel summary-card"><span>Validité</span><strong>{{ quote.valid_until|date:"d/m/Y" }}</strong><small>Devise : MAD</small></article>
@@ -60,8 +90,7 @@
                         <th class="numeric">Prix unitaire HT</th>
                         {% if has_discount %}<th>Remise</th>{% endif %}
                         <th>Taxe</th>
-                        <th class="numeric">Net HT</th>
-                        <th class="numeric">Total TTC</th>
+                        <th class="numeric">Total HT</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -84,8 +113,7 @@
                                 <td>{% if line.discount_value > 0 %}{% if line.discount_type == "percentage" %}{{ line.discount_value }} %{% else %}{{ line.discount_value|money }} MAD{% endif %}{% else %}—{% endif %}</td>
                             {% endif %}
                             <td>{{ line.tax_name }}{% if line.tax_percentage %} · {{ line.tax_percentage }} %{% endif %}</td>
-                            <td class="numeric">{{ line.amounts.net|money }} MAD</td>
-                            <td class="numeric">{{ line.amounts.total|money }} MAD</td>
+                            <td class="numeric"><strong>{{ line.amounts.net|money }} MAD</strong></td>
                         </tr>
                     {% endfor %}
                 </tbody>
@@ -98,12 +126,14 @@
         {% if has_discount %}
             <div><span>Total brut HT</span><strong>{{ totals.gross|money }} MAD</strong></div>
             <div><span>Remises</span><strong>− {{ totals.discount|money }} MAD</strong></div>
-            <div><span>Total net HT</span><strong>{{ totals.net|money }} MAD</strong></div>
+            <div class="grand-total"><span>Total Net HT</span><strong>{{ totals.net|money }} MAD</strong></div>
         {% else %}
-            <div><span>Total HT</span><strong>{{ totals.net|money }} MAD</strong></div>
+            <div class="grand-total"><span>Total HT</span><strong>{{ totals.net|money }} MAD</strong></div>
         {% endif %}
-        <div><span>Taxes</span><strong>{{ totals.tax|money }} MAD</strong></div>
-        <div class="grand-total"><span>Total TTC</span><strong>{{ totals.total|money }} MAD</strong></div>
+        {% if totals.tax > 0 %}
+            <div style="color: #64748b; font-size: 0.9em;"><span>TVA (estimée)</span><strong>{{ totals.tax|money }} MAD</strong></div>
+            <div style="color: #64748b; font-size: 0.9em;"><span>Total TTC (indicatif)</span><strong>{{ totals.total|money }} MAD</strong></div>
+        {% endif %}
     </div>
 </section>
 
@@ -144,7 +174,7 @@
                                     value="{{ line.remaining_quantity }}"
                                     min="0"
                                     max="{{ line.remaining_quantity }}"
-                                    step="0.001"
+                                    step="1"
                                     style="width: 110px; padding: 5px 8px; font-weight: 700; border: 1px solid #D4AF37; border-radius: 6px; text-align: right;"
                                     {% if line.remaining_quantity <= 0 %}disabled{% endif %}
                                 >
@@ -236,6 +266,20 @@
 
 {% if quote.notes %}<section class="panel form-panel"><p class="eyebrow">NOTES</p><p class="notes">{{ quote.notes|linebreaksbr }}</p></section>{% endif %}
 {% if quote.revisions.all %}<section class="panel form-panel"><p class="eyebrow">VERSIONS LIÉES</p>{% for revision in quote.revisions.all %}<p><a href="{% url 'quote-detail' revision.pk %}">{{ revision.number|default:"Brouillon" }} · {{ revision.get_status_display }}</a></p>{% endfor %}</section>{% endif %}
+
+{% if company.stamp %}
+<section class="panel form-panel" style="display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px;">
+    <div>
+        <p class="eyebrow">AUTHENTIFICATION</p>
+        <h3 style="margin: 0 0 6px 0; font-size: 16px;">Cachet officiel de l'entreprise</h3>
+        <p style="margin: 0; font-size: 13px; color: var(--muted, #64748b);">Ce document comporte le cachet officiel et la signature de <strong>{{ company.name }}</strong> lors de l'exportation PDF & Word.</p>
+    </div>
+    <div style="background: #ffffff; padding: 10px 16px; border: 1px dashed #cbd5e1; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.04);">
+        <img src="{{ company.stamp.url }}" alt="Cachet {{ company.name }}" style="max-height: 75px; max-width: 170px; object-fit: contain; transform: rotate(-2deg);">
+    </div>
+</section>
+{% endif %}
+
 <section class="panel form-panel">
     <div class="section-heading"><div><p class="eyebrow">TRAÇABILITÉ</p><h2>Historique</h2></div></div>
     {% if history %}
@@ -246,4 +290,31 @@
         </ul>
     {% else %}<p class="empty-inline">Aucun événement enregistré.</p>{% endif %}
 </section>
+
+{% if can_add %}
+<dialog id="clone-quote-modal" class="modal-dialog" style="border: 1px solid var(--border-color, #e2e8f0); border-radius: 12px; padding: 24px; max-width: 500px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); background: #ffffff;">
+    <form method="post" action="{% url 'quote-clone' quote.pk %}">
+        {% csrf_token %}
+        <h3 style="margin-top: 0; color: #0f172a; font-size: 18px;">📋 Dupliquer le devis {{ quote.number|default:quote.pk }}</h3>
+        <p style="font-size: 14px; color: #475569; line-height: 1.5;">
+            Cette action créera un <strong>nouveau devis brouillon</strong> reprenant à l'identique toutes les prestations, articles, quantités et conditions tarifaires.
+        </p>
+        <div style="margin: 16px 0;">
+            <label for="clone-target-customer" style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Client destinataire :</label>
+            <select id="clone-target-customer" name="customer_id" required style="width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px; font-family: inherit; font-size: 14px; background: #fff;">
+                {% for c in customers %}
+                    <option value="{{ c.pk }}" {% if c.pk == quote.customer_id %}selected{% endif %}>
+                        {{ c.name }}{% if c.city %} ({{ c.city }}){% endif %}
+                    </option>
+                {% endfor %}
+            </select>
+            <small style="display: block; color: #64748b; font-size: 12px; margin-top: 4px;">Vous pouvez conserver le client actuel ou en choisir un nouveau.</small>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px;">
+            <button type="button" class="button quiet" onclick="document.getElementById('clone-quote-modal').close();">Annuler</button>
+            <button type="submit" class="button primary">Créer le devis dupliqué</button>
+        </div>
+    </form>
+</dialog>
+{% endif %}
 {% endblock %}

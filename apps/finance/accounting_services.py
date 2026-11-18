@@ -11,7 +11,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from .models import CompanySettings, Invoice, Payment, PaymentAllocation
-from .quote_calculations import calculate_quote_line, calculate_quote_totals
+from .quote_calculations import calculate_quote_line, calculate_quote_totals, round_money
 
 
 def _money(val):
@@ -449,7 +449,208 @@ def get_payments_journal_data(start_date, end_date):
     }
 
 
-def build_complete_fiduciary_pack_xlsx(period_label, vat_data, sales_data, payments_data):
+def get_non_deductible_expenses_data(start_date, end_date):
+    """
+    Calcule l'état fiscal des charges non déductibles et des réintégrations
+    extra-comptables (IS - Tableau N°3 de la liasse fiscale marocaine / CGI).
+    """
+    from .models import Expense
+    expenses = (
+        Expense.objects.filter(expense_date__range=[start_date, end_date])
+        .select_related("category", "supplier", "project")
+        .prefetch_related("payments")
+        .order_by("expense_date", "id")
+    )
+
+    rows = []
+    total_recorded = Decimal("0.00")
+    total_reintegration = Decimal("0.00")
+    by_reason = {}
+
+    order = 1
+    for exp in expenses:
+        if exp.has_fiscal_reintegration:
+            reint_amt = exp.fiscal_reintegration_amount
+            reason_lbl = exp.effective_reintegration_reason
+            total_recorded += exp.amount
+            total_reintegration += reint_amt
+
+            by_reason[reason_lbl] = by_reason.get(reason_lbl, Decimal("0.00")) + reint_amt
+
+            rows.append({
+                "order_num": order,
+                "id": exp.pk,
+                "expense_date": exp.expense_date,
+                "description": exp.description,
+                "category_name": exp.category.name if exp.category else "—",
+                "supplier_name": exp.supplier.name if exp.supplier else "Divers / Sans fournisseur",
+                "supplier_ice": exp.supplier.ice if (exp.supplier and exp.supplier.ice) else "—",
+                "amount": exp.amount,
+                "reintegration_amount": reint_amt,
+                "reason_label": reason_lbl,
+                "fiscal_notes": exp.fiscal_notes,
+                "has_cash_over_ceiling": exp.has_cash_over_ceiling,
+                "cash_excess": exp.total_cash_excess,
+            })
+            order += 1
+
+    summary_reasons = [
+        {"reason": k, "amount": v}
+        for k, v in sorted(by_reason.items(), key=lambda x: x[1], reverse=True)
+    ]
+
+    return {
+        "rows": rows,
+        "summary_reasons": summary_reasons,
+        "totals": {
+            "count": len(rows),
+            "total_recorded": round_money(total_recorded),
+            "total_reintegration": round_money(total_reintegration),
+        },
+    }
+
+
+def get_purchases_journal_data(start_date, end_date):
+    """
+    Calcule le Journal des Achats et Charges d'exploitation (AC) selon le PCGE marocain :
+    - Ventilation par compte PCGE (6111, 61251, 6136, 6145, 6147...)
+    - Traitement spécifique Carburant (Art. 106-I-2° CGI) : 0 DH de TVA récupérable, 100% TTC pur en charge
+    - Traitement des amendes (Art. 11-I CGI) : 0 DH TVA récupérable
+    - Charges d'exploitation : Base HT, TVA Récupérable (Compte 34552), Total TTC
+    - Écritures comptables en partie double
+    """
+    from .models import Expense
+    expenses = (
+        Expense.objects.filter(expense_date__range=[start_date, end_date])
+        .select_related("category", "supplier", "project")
+        .prefetch_related("payments")
+        .order_by("expense_date", "id")
+    )
+
+    rows = []
+    total_ht = Decimal("0.00")
+    total_recoverable_vat = Decimal("0.00")
+    total_ttc = Decimal("0.00")
+    fuel_total_ttc = Decimal("0.00")
+    summary_by_account = {}
+    accounting_entries = []
+
+    order = 1
+    for exp in expenses:
+        piece = f"DEP-{exp.pk:04d}"
+        cat_name = exp.category.name if exp.category else "Dépense générale"
+        pcge = exp.category.pcge_account if exp.category else "6111"
+        sup_name = exp.supplier.name if exp.supplier else "Divers / Sans fournisseur"
+        sup_ice = exp.supplier.ice if (exp.supplier and exp.supplier.ice) else "—"
+
+        ht = exp.base_ht
+        vat = exp.vat_amount
+        ttc = exp.amount
+        rate = exp.effective_tax_rate
+        is_recup = exp.effective_is_vat_recoverable
+        status_lbl = exp.vat_status_label
+
+        total_ht += ht
+        total_recoverable_vat += vat
+        total_ttc += ttc
+        if pcge == "61251" or "carburant" in cat_name.lower():
+            fuel_total_ttc += ttc
+
+        # Regroupement par compte PCGE
+        if pcge not in summary_by_account:
+            summary_by_account[pcge] = {
+                "account": pcge,
+                "name": cat_name,
+                "count": 0,
+                "base_ht": Decimal("0.00"),
+                "vat_amount": Decimal("0.00"),
+                "total_ttc": Decimal("0.00"),
+            }
+        summary_by_account[pcge]["count"] += 1
+        summary_by_account[pcge]["base_ht"] += ht
+        summary_by_account[pcge]["vat_amount"] += vat
+        summary_by_account[pcge]["total_ttc"] += ttc
+
+        first_pmt = exp.payments.first()
+        pmt_method = first_pmt.get_method_display() if first_pmt else "Non réglé"
+        pmt_date = first_pmt.payment_date if first_pmt else exp.expense_date
+
+        rows.append({
+            "order_num": order,
+            "id": exp.pk,
+            "piece": piece,
+            "expense_date": exp.expense_date,
+            "category_name": cat_name,
+            "pcge_account": pcge,
+            "supplier_name": sup_name,
+            "supplier_ice": sup_ice,
+            "description": exp.description,
+            "payment_method": pmt_method,
+            "payment_date": pmt_date,
+            "base_ht": ht,
+            "tax_rate": rate,
+            "vat_amount": vat,
+            "total_ttc": ttc,
+            "is_vat_recoverable": is_recup,
+            "vat_status_label": status_lbl,
+            "is_tax_deductible": exp.is_tax_deductible,
+            "receipt_url": exp.receipt.url if exp.receipt else "",
+        })
+        order += 1
+
+        # Écritures comptables Journal des Achats (AC)
+        # 1. Débit Compte de charge 61xxx (pour le HT, ou pour le TTC si TVA non récupérable / Carburant)
+        accounting_entries.append({
+            "date": exp.expense_date,
+            "journal": "AC",
+            "piece": piece,
+            "account": pcge.ljust(8, "0"),
+            "account_label": f"{cat_name} ({pcge})",
+            "libelle": f"Fact/Ticket {piece} - {exp.description[:40]}",
+            "debit": ht,
+            "credit": Decimal("0.00"),
+        })
+        # 2. Débit État TVA récupérable sur charges 34552000 (si TVA récupérable > 0)
+        if vat > Decimal("0.00"):
+            accounting_entries.append({
+                "date": exp.expense_date,
+                "journal": "AC",
+                "piece": piece,
+                "account": "34552000",
+                "account_label": "État, TVA récupérable sur charges",
+                "libelle": f"TVA s/ {piece} ({rate:.0f}%)",
+                "debit": vat,
+                "credit": Decimal("0.00"),
+            })
+        # 3. Crédit Fournisseur 44110000 (pour le TTC total)
+        accounting_entries.append({
+            "date": exp.expense_date,
+            "journal": "AC",
+            "piece": piece,
+            "account": "44110000",
+            "account_label": "Fournisseurs",
+            "libelle": f"{sup_name[:40]} - {piece}",
+            "debit": Decimal("0.00"),
+            "credit": ttc,
+        })
+
+    summary_list = sorted(summary_by_account.values(), key=lambda x: x["account"])
+
+    return {
+        "rows": rows,
+        "summary_by_account": summary_list,
+        "accounting_entries": accounting_entries,
+        "totals": {
+            "count": len(rows),
+            "total_ht": round_money(total_ht),
+            "recoverable_vat": round_money(total_recoverable_vat),
+            "fuel_total_ttc": round_money(fuel_total_ttc),
+            "total_ttc": round_money(total_ttc),
+        },
+    }
+
+
+def build_complete_fiduciary_pack_xlsx(period_label, vat_data, sales_data, payments_data, non_deductible_data=None, purchases_data=None):
     """
     Génère le classeur Excel Haute Définition (.xlsx) avec 3 onglets formatés pour le fiduciaire :
     1. Déclaration TVA & Encaissements
@@ -457,6 +658,25 @@ def build_complete_fiduciary_pack_xlsx(period_label, vat_data, sales_data, payme
     3. Journal des Règlements (TR)
     """
     company = CompanySettings.get_settings()
+    if non_deductible_data is None and vat_data.get("start_date") and vat_data.get("end_date"):
+        non_deductible_data = get_non_deductible_expenses_data(vat_data["start_date"], vat_data["end_date"])
+    if non_deductible_data is None:
+        non_deductible_data = {"rows": [], "summary_reasons": [], "totals": {"count": 0, "total_recorded": Decimal("0.00"), "total_reintegration": Decimal("0.00")}}
+    if purchases_data is None and vat_data.get("start_date") and vat_data.get("end_date"):
+        purchases_data = get_purchases_journal_data(vat_data["start_date"], vat_data["end_date"])
+    if purchases_data is None:
+        purchases_data = {
+            "rows": [],
+            "summary_by_account": [],
+            "accounting_entries": [],
+            "totals": {
+                "count": 0,
+                "total_ht": Decimal("0.00"),
+                "recoverable_vat": Decimal("0.00"),
+                "fuel_total_ttc": Decimal("0.00"),
+                "total_ttc": Decimal("0.00"),
+            },
+        }
     wb = openpyxl.Workbook()
 
     # Styles d'excellence fiduciaire : Bleu Nuit & Or
@@ -587,6 +807,41 @@ def build_complete_fiduciary_pack_xlsx(period_label, vat_data, sales_data, payme
             c.border = cell_border
             if row_idx % 2 == 0:
                 c.fill = fill_zebra
+        row_idx += 1
+
+    # Total relevé détaillé
+    ws_tva.cell(row=row_idx, column=4, value="TOTAL TVA COLLECTÉE SUR ENCAISSEMENTS").font = font_bold
+    ws_tva.cell(row=row_idx, column=10, value=float(vat_data["totals"]["base_ht"])).number_format = money_fmt
+    ws_tva.cell(row=row_idx, column=12, value=float(vat_data["totals"]["tax_amount"])).number_format = money_fmt
+    ws_tva.cell(row=row_idx, column=13, value=float(vat_data["totals"]["total_ttc"])).number_format = money_fmt
+    for ci in range(1, 14):
+        c = ws_tva.cell(row=row_idx, column=ci)
+        c.font = font_bold
+        c.fill = fill_subtotal
+        c.border = total_border
+    row_idx += 2
+
+    # Tableau Réconciliation Nette de TVA
+    ws_tva.cell(row=row_idx, column=1, value="CALCUL DU SOLDE NET DE TVA (TVA NETTE DUE OU CRÉDIT DE TVA)").font = font_subtitle
+    row_idx += 1
+
+    rec_vat = purchases_data.get("totals", {}).get("recoverable_vat", Decimal("0.00"))
+    coll_vat = vat_data["totals"]["tax_amount"]
+    net_vat = coll_vat - rec_vat
+    fuel_ttc = purchases_data.get("totals", {}).get("fuel_total_ttc", Decimal("0.00"))
+
+    recon_lines = [
+        ("1. TVA Collectée Exigible (Ventes & Prestations encaissées)", coll_vat, "C59B27"),
+        ("2. (-) TVA Déductible / Récupérable sur Charges & Achats (Compte 34552)", rec_vat, "0F172A"),
+        ("3. (=) SOLDE NET DE TVA " + ("(TVA Nette à décaisser / régler à la DGI)" if net_vat >= 0 else "(Crédit de TVA à reporter)"), abs(net_vat), "10B981" if net_vat < 0 else "BE123C"),
+        ("Rappel fiscal Carburant (Art. 106-I-2° CGI) : Consommé en TTC pur (0 DH TVA récupérée)", fuel_ttc, "64748B"),
+    ]
+    for lbl, val, color in recon_lines:
+        ws_tva.cell(row=row_idx, column=1, value=lbl).font = Font(name="Calibri", size=9.5, bold=True, color=color)
+        c_val = ws_tva.cell(row=row_idx, column=12, value=float(val))
+        c_val.font = Font(name="Calibri", size=10, bold=True, color=color)
+        c_val.number_format = money_fmt
+        c_val.border = cell_border
         row_idx += 1
 
     # ==========================================
@@ -747,8 +1002,295 @@ def build_complete_fiduciary_pack_xlsx(period_label, vat_data, sales_data, payme
         c.fill = fill_subtotal
         c.border = total_border
 
-    # Auto-ajustement de la largeur des colonnes sur tous les onglets
-    for sheet in [ws_tva, ws_ve, ws_tr]:
+    # 4. ONGLET 4 : INVENTAIRE ET VALORISATION DES STOCKS (PCGE MAROC - COMPTE 3111)
+    from apps.catalog.models import Article
+    ws_st = wb.create_sheet(title="Inventaire & Stocks (3111)")
+    ws_st.views.sheetView[0].showGridLines = True
+
+    ws_st["A1"] = f"{company.name} - INVENTAIRE & VALORISATION DES STOCKS DE MARCHANDISES"
+    ws_st["A1"].font = font_title
+    ws_st["A2"] = "Arrêté d'inventaire | Conforme Plan Comptable Général des Entreprises (PCGE Maroc)"
+    ws_st["A2"].font = font_subtitle
+
+    headers_st = [
+        "Compte PCGE",
+        "Référence",
+        "Désignation de la Marchandise",
+        "Nature",
+        "Quantité en Stock",
+        "Coût Achat Unitaire HT (MAD)",
+        "Valeur Totale Stock HT (MAD)",
+        "Prix Vente Conseillé HT",
+        "Marge Brute HT",
+        "Statut Logistique",
+    ]
+    for col_idx, h in enumerate(headers_st, 1):
+        cell = ws_st.cell(row=4, column=col_idx, value=h)
+        cell.font = font_header
+        cell.fill = fill_header
+        cell.border = cell_border
+        cell.alignment = Alignment(horizontal="center" if col_idx in [1, 2, 5, 10] else ("right" if col_idx in [6, 7, 8, 9] else "left"))
+
+    articles = Article.objects.filter(is_active=True).order_by("reference")
+    row_st_idx = 5
+    total_valeur_stock = Decimal("0.00")
+
+    for art in articles:
+        val_stock = art.valeur_stock_ht
+        total_valeur_stock += val_stock
+
+        ws_st.cell(row=row_st_idx, column=1, value=art.compte_stock).alignment = Alignment(horizontal="center")
+        ws_st.cell(row=row_st_idx, column=2, value=art.reference).alignment = Alignment(horizontal="center")
+        ws_st.cell(row=row_st_idx, column=3, value=art.designation).alignment = Alignment(horizontal="left")
+        ws_st.cell(row=row_st_idx, column=4, value=art.get_nature_produit_display()).alignment = Alignment(horizontal="left")
+        ws_st.cell(row=row_st_idx, column=5, value=float(art.stock_actuel)).number_format = "#,##0.00"
+        ws_st.cell(row=row_st_idx, column=6, value=float(art.prix_achat_ht)).number_format = money_fmt
+        ws_st.cell(row=row_st_idx, column=7, value=float(val_stock)).number_format = money_fmt
+        ws_st.cell(row=row_st_idx, column=8, value=float(art.prix_vente_ht)).number_format = money_fmt
+        ws_st.cell(row=row_st_idx, column=9, value=float(art.marge_unitaire_ht)).number_format = money_fmt
+
+        statut_str = "Rupture" if art.en_rupture else ("Alerte Seuil" if art.sous_alerte else "En Stock")
+        ws_st.cell(row=row_st_idx, column=10, value=statut_str).alignment = Alignment(horizontal="center")
+
+        for ci in range(1, 11):
+            c = ws_st.cell(row=row_st_idx, column=ci)
+            c.border = cell_border
+            c.font = font_data
+            if row_st_idx % 2 == 0:
+                c.fill = fill_zebra
+        row_st_idx += 1
+
+    ws_st.cell(row=row_st_idx, column=3, value="TOTAL ACTIF CIRCULANT (STOCKS COMPTE 3111)").font = font_bold
+    ws_st.cell(row=row_st_idx, column=7, value=float(total_valeur_stock)).number_format = money_fmt
+    for ci in range(1, 11):
+        c = ws_st.cell(row=row_st_idx, column=ci)
+        c.font = font_bold
+        c.fill = fill_subtotal
+        c.border = total_border
+
+    row_st_idx += 2
+    ws_st.cell(row=row_st_idx, column=2, value="CONFORMITÉ COMPTABLE PCGE - ÉCRITURE D'INVENTAIRE / VARIATION DES STOCKS :").font = font_bold
+    row_st_idx += 1
+    ws_st.cell(row=row_st_idx, column=2, value=f"• Débit Compte 3111 (Marchandises en stock) : {float(total_valeur_stock):,.2f} MAD").font = font_company
+    row_st_idx += 1
+    ws_st.cell(row=row_st_idx, column=2, value=f"• Crédit Compte 6114 (Variation des stocks de marchandises) : {float(total_valeur_stock):,.2f} MAD").font = font_company
+
+
+    # =========================================================================
+    # ONGLET 5 : CHARGES NON DÉDUCTIBLES & RÉINTÉGRATIONS FISCALES (TABLEAU N°3 IS)
+    # =========================================================================
+    ws_reint = wb.create_sheet(title="Réintégrations IS (Tab 3)")
+    ws_reint.views.sheetView[0].showGridLines = True
+
+    ws_reint["A1"] = f"{company.name} - ÉTAT DES CHARGES NON DÉDUCTIBLES & RÉINTÉGRATIONS FISCALES (IS - TABLEAU N°3)"
+    ws_reint["A1"].font = font_title
+    ws_reint["A2"] = f"Période fiscale : {period_label} | Conforme CGI Maroc (Articles 10, 11 & 106) | {company.legal_notice()}"
+    ws_reint["A2"].font = font_company
+
+    if non_deductible_data is None and vat_data.get("start_date") and vat_data.get("end_date"):
+        non_deductible_data = get_non_deductible_expenses_data(vat_data["start_date"], vat_data["end_date"])
+
+    reint_totals = non_deductible_data.get("totals", {}) if non_deductible_data else {}
+    tot_rec = reint_totals.get("total_recorded", Decimal("0.00"))
+    tot_reint = reint_totals.get("total_reintegration", Decimal("0.00"))
+    count_reint = reint_totals.get("count", 0)
+
+    # Cartouches KPIs
+    kpis_reint = [
+        ("Total Charges avec Réintégration", tot_rec, "A4", "B5"),
+        ("TOTAL RÉINTÉGRATIONS FISCALES (IS)", tot_reint, "D4", "E5"),
+        ("Nombre de Dépenses Concernées", count_reint, "G4", "H5"),
+    ]
+    for label, val, top_left, bottom_right in kpis_reint:
+        col1 = top_left[0]
+        row1 = int(top_left[1])
+        ws_reint[top_left] = label
+        ws_reint[top_left].font = font_kpi_label
+        ws_reint[f"{col1}{row1+1}"] = float(val) if isinstance(val, (int, float, Decimal)) else val
+        ws_reint[f"{col1}{row1+1}"].font = font_kpi_val
+        if isinstance(val, (Decimal, float)):
+            ws_reint[f"{col1}{row1+1}"].number_format = money_fmt
+
+    # Tableau récapitulatif par motif légal CGI
+    ws_reint["A7"] = "SYNTHÈSE DES RÉINTÉGRATIONS PAR MOTIF LÉGAL (CGI MAROC)"
+    ws_reint["A7"].font = font_subtitle
+
+    reint_summary_headers = ["Motif Légal (CGI)", "Montant à Réintégrer (MAD)"]
+    for col_idx, h in enumerate(reint_summary_headers, start=1):
+        c = ws_reint.cell(row=8, column=col_idx, value=h)
+        c.font = font_header
+        c.fill = fill_header
+        c.alignment = Alignment(horizontal="center" if col_idx == 2 else "left")
+
+    row_sum_idx = 9
+    summary_reasons = non_deductible_data.get("summary_reasons", []) if non_deductible_data else []
+    for item in summary_reasons:
+        ws_reint.cell(row=row_sum_idx, column=1, value=item["reason"]).font = font_bold
+        ws_reint.cell(row=row_sum_idx, column=2, value=float(item["amount"])).number_format = money_fmt
+        for ci in [1, 2]:
+            c = ws_reint.cell(row=row_sum_idx, column=ci)
+            c.border = cell_border
+        row_sum_idx += 1
+
+    if not summary_reasons:
+        ws_reint.cell(row=row_sum_idx, column=1, value="Aucune charge non déductible sur la période").font = font_company
+        for ci in [1, 2]:
+            ws_reint.cell(row=row_sum_idx, column=ci).border = cell_border
+        row_sum_idx += 1
+
+    # Tableau détaillé
+    row_dt_idx = row_sum_idx + 2
+    ws_reint.cell(row=row_dt_idx, column=1, value="DÉTAIL DES CHARGES ET JUSTIFICATIONS FISCALES (TABLEAU N°3 LIASSE IS)").font = font_subtitle
+    row_dt_idx += 1
+
+    reint_dt_headers = [
+        "N°", "Date", "Description / Pièce", "Catégorie", "Fournisseur", "ICE Fournisseur",
+        "Montant Comptable TTC", "Montant Réintégré (IS)", "Motif Légal (CGI Maroc)", "Observations / Justification"
+    ]
+    for col_idx, h in enumerate(reint_dt_headers, start=1):
+        c = ws_reint.cell(row=row_dt_idx, column=col_idx, value=h)
+        c.font = font_header
+        c.fill = fill_header
+        c.alignment = Alignment(horizontal="center" if col_idx in [1, 2, 6, 7, 8] else "left")
+
+    row_dt_idx += 1
+    reint_rows = non_deductible_data.get("rows", []) if non_deductible_data else []
+    for r in reint_rows:
+        ws_reint.cell(row=row_dt_idx, column=1, value=r["order_num"]).alignment = Alignment(horizontal="center")
+        ws_reint.cell(row=row_dt_idx, column=2, value=r["expense_date"].strftime("%d/%m/%Y")).alignment = Alignment(horizontal="center")
+        ws_reint.cell(row=row_dt_idx, column=3, value=r["description"]).alignment = Alignment(horizontal="left")
+        ws_reint.cell(row=row_dt_idx, column=4, value=r["category_name"]).alignment = Alignment(horizontal="left")
+        ws_reint.cell(row=row_dt_idx, column=5, value=r["supplier_name"]).alignment = Alignment(horizontal="left")
+        ws_reint.cell(row=row_dt_idx, column=6, value=r["supplier_ice"]).alignment = Alignment(horizontal="center")
+        ws_reint.cell(row=row_dt_idx, column=7, value=float(r["amount"])).number_format = money_fmt
+        ws_reint.cell(row=row_dt_idx, column=8, value=float(r["reintegration_amount"])).number_format = money_fmt
+        ws_reint.cell(row=row_dt_idx, column=9, value=r["reason_label"]).alignment = Alignment(horizontal="left")
+        ws_reint.cell(row=row_dt_idx, column=10, value=r["fiscal_notes"] or "—").alignment = Alignment(horizontal="left")
+
+        for ci in range(1, 11):
+            c = ws_reint.cell(row=row_dt_idx, column=ci)
+            c.border = cell_border
+            c.font = font_data
+            if row_dt_idx % 2 == 0:
+                c.fill = fill_zebra
+        row_dt_idx += 1
+
+    # Ligne de totalisation
+    ws_reint.cell(row=row_dt_idx, column=3, value="TOTAL DES RÉINTÉGRATIONS EXTRA-COMPTABLES (IS)").font = font_bold
+    ws_reint.cell(row=row_dt_idx, column=7, value=float(tot_rec)).number_format = money_fmt
+    ws_reint.cell(row=row_dt_idx, column=8, value=float(tot_reint)).number_format = money_fmt
+    for ci in range(1, 11):
+        c = ws_reint.cell(row=row_dt_idx, column=ci)
+        c.font = font_bold
+        c.fill = fill_subtotal
+        c.border = total_border
+
+        # Auto-ajustement de la largeur des colonnes sur tous les onglets
+    # ==========================================
+    # ONGLET 6 : JOURNAL DES ACHATS & CHARGES (AC)
+    # ==========================================
+    ws_ac = wb.create_sheet(title="Journal Achats (AC)")
+    ws_ac.views.sheetView[0].showGridLines = True
+
+    ws_ac["A1"] = f"JOURNAL DES ACHATS & CHARGES (AC) — {period_label.upper()}"
+    ws_ac["A1"].font = font_title
+    ws_ac["A2"] = f"Société : {company.name} | Conforme PCGE Maroc & Article 106 CGI"
+    ws_ac["A2"].font = font_company
+
+    # Synthèse par compte PCGE
+    ws_ac["A4"] = "SYNTHÈSE DES CHARGES PAR COMPTE PCGE"
+    ws_ac["A4"].font = font_bold
+
+    ac_kpi_headers = ["Compte PCGE", "Intitulé du Compte", "Nb Charges", "Base HT (MAD)", "TVA Récupérable (MAD)", "Total TTC (MAD)"]
+    for col_idx, h in enumerate(ac_kpi_headers, start=1):
+        cell = ws_ac.cell(row=5, column=col_idx, value=h)
+        cell.font = font_header
+        cell.fill = fill_header
+        cell.alignment = Alignment(horizontal="center" if col_idx in [1, 3] else ("right" if col_idx >= 4 else "left"), vertical="center")
+        cell.border = cell_border
+
+    row_ac_kpi = 6
+    for item in purchases_data.get("summary_by_account", []):
+        ws_ac.cell(row=row_ac_kpi, column=1, value=item["account"]).alignment = Alignment(horizontal="center")
+        ws_ac.cell(row=row_ac_kpi, column=2, value=item["name"]).alignment = Alignment(horizontal="left")
+        ws_ac.cell(row=row_ac_kpi, column=3, value=item["count"]).alignment = Alignment(horizontal="center")
+        ws_ac.cell(row=row_ac_kpi, column=4, value=float(item["base_ht"])).number_format = money_fmt
+        ws_ac.cell(row=row_ac_kpi, column=5, value=float(item["vat_amount"])).number_format = money_fmt
+        ws_ac.cell(row=row_ac_kpi, column=6, value=float(item["total_ttc"])).number_format = money_fmt
+        for ci in range(1, 7):
+            c = ws_ac.cell(row=row_ac_kpi, column=ci)
+            c.font = font_data
+            c.border = cell_border
+        row_ac_kpi += 1
+
+    # Totaux synthèse
+    ac_totals = purchases_data.get("totals", {})
+    ws_ac.cell(row=row_ac_kpi, column=2, value="TOTAL DES CHARGES D'EXPLOITATION").font = font_bold
+    ws_ac.cell(row=row_ac_kpi, column=3, value=ac_totals.get("count", 0)).alignment = Alignment(horizontal="center")
+    ws_ac.cell(row=row_ac_kpi, column=4, value=float(ac_totals.get("total_ht", 0))).number_format = money_fmt
+    ws_ac.cell(row=row_ac_kpi, column=5, value=float(ac_totals.get("recoverable_vat", 0))).number_format = money_fmt
+    ws_ac.cell(row=row_ac_kpi, column=6, value=float(ac_totals.get("total_ttc", 0))).number_format = money_fmt
+    for ci in range(1, 7):
+        c = ws_ac.cell(row=row_ac_kpi, column=ci)
+        c.font = font_bold
+        c.fill = fill_subtotal
+        c.border = total_border
+
+    # Tableau détaillé des achats
+    row_ac_dt = row_ac_kpi + 2
+    ws_ac.cell(row=row_ac_dt, column=1, value="DÉTAIL DU JOURNAL DES ACHATS ET FRAIS GÉNÉRAUX").font = font_bold
+    row_ac_dt += 1
+
+    ac_dt_headers = [
+        "N°", "Date", "N° Pièce", "Compte PCGE", "Catégorie", "Fournisseur", "ICE Fournisseur",
+        "Description", "Règlement", "Montant HT (MAD)", "Taux TVA", "TVA Récupérable (MAD)",
+        "Total TTC (MAD)", "Régime TVA (Art. 106)", "Déductibilité IS"
+    ]
+    for col_idx, h in enumerate(ac_dt_headers, start=1):
+        cell = ws_ac.cell(row=row_ac_dt, column=col_idx, value=h)
+        cell.font = font_header
+        cell.fill = fill_header
+        cell.alignment = Alignment(horizontal="center" if col_idx in [1, 2, 3, 4, 7, 11] else ("right" if col_idx in [10, 12, 13] else "left"), vertical="center")
+        cell.border = cell_border
+
+    row_ac_dt += 1
+    for r in purchases_data.get("rows", []):
+        ws_ac.cell(row=row_ac_dt, column=1, value=r["order_num"]).alignment = Alignment(horizontal="center")
+        ws_ac.cell(row=row_ac_dt, column=2, value=r["expense_date"].strftime("%d/%m/%Y") if isinstance(r["expense_date"], date) else str(r["expense_date"])).alignment = Alignment(horizontal="center")
+        ws_ac.cell(row=row_ac_dt, column=3, value=r["piece"]).alignment = Alignment(horizontal="center")
+        ws_ac.cell(row=row_ac_dt, column=4, value=r["pcge_account"]).alignment = Alignment(horizontal="center")
+        ws_ac.cell(row=row_ac_dt, column=5, value=r["category_name"]).alignment = Alignment(horizontal="left")
+        ws_ac.cell(row=row_ac_dt, column=6, value=r["supplier_name"]).alignment = Alignment(horizontal="left")
+        ws_ac.cell(row=row_ac_dt, column=7, value=r["supplier_ice"]).alignment = Alignment(horizontal="center")
+        ws_ac.cell(row=row_ac_dt, column=8, value=r["description"]).alignment = Alignment(horizontal="left")
+        ws_ac.cell(row=row_ac_dt, column=9, value=r["payment_method"]).alignment = Alignment(horizontal="left")
+        ws_ac.cell(row=row_ac_dt, column=10, value=float(r["base_ht"])).number_format = money_fmt
+        ws_ac.cell(row=row_ac_dt, column=11, value=f"{r['tax_rate']:.0f} %").alignment = Alignment(horizontal="center")
+        ws_ac.cell(row=row_ac_dt, column=12, value=float(r["vat_amount"])).number_format = money_fmt
+        ws_ac.cell(row=row_ac_dt, column=13, value=float(r["total_ttc"])).number_format = money_fmt
+        ws_ac.cell(row=row_ac_dt, column=14, value=r["vat_status_label"]).alignment = Alignment(horizontal="center")
+        ws_ac.cell(row=row_ac_dt, column=15, value="Déductible" if r["is_tax_deductible"] else "À réintégrer (Tab 3)").alignment = Alignment(horizontal="center")
+
+        for ci in range(1, 16):
+            c = ws_ac.cell(row=row_ac_dt, column=ci)
+            c.font = font_data
+            c.border = cell_border
+            if row_ac_dt % 2 == 0:
+                c.fill = fill_zebra
+        row_ac_dt += 1
+
+    # Total ligne détaillée
+    ws_ac.cell(row=row_ac_dt, column=8, value="TOTAL DU JOURNAL DES ACHATS").font = font_bold
+    ws_ac.cell(row=row_ac_dt, column=10, value=float(ac_totals.get("total_ht", 0))).number_format = money_fmt
+    ws_ac.cell(row=row_ac_dt, column=12, value=float(ac_totals.get("recoverable_vat", 0))).number_format = money_fmt
+    ws_ac.cell(row=row_ac_dt, column=13, value=float(ac_totals.get("total_ttc", 0))).number_format = money_fmt
+    for ci in range(1, 16):
+        c = ws_ac.cell(row=row_ac_dt, column=ci)
+        c.font = font_bold
+        c.fill = fill_subtotal
+        c.border = total_border
+
+    for sheet in [ws_tva, ws_ve, ws_tr, ws_st, ws_reint, ws_ac]:
         for col in sheet.columns:
             max_len = 0
             col_letter = get_column_letter(col[0].column)

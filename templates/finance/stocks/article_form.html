@@ -1,0 +1,122 @@
+{% extends "finance/quotes/base.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">CATALOGUE · MARCHANDISES STOCKABLES (PCGE 3111)</p>
+        <h1>{{ title }}</h1>
+        <p class="subheading">Ajoutez une marchandise physique au catalogue pour suivre ses quantités et sa valorisation.</p>
+    </div>
+    <a class="button quiet" href="{% url 'stock-dashboard' %}">← Retour au stock</a>
+</div>
+
+<div style="max-width: 800px; margin: 0 auto;">
+    <section class="panel" style="padding: 24px;">
+        <form method="post" novalidate>
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+                <div class="message error" style="margin-bottom: 20px;">
+                    {{ form.non_field_errors }}
+                </div>
+            {% endif %}
+
+            <div style="display: grid; gap: 16px;">
+                <!-- Référence et Désignation -->
+                <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 16px;">
+                    <div>
+                        <label for="{{ form.reference.id_for_label }}" style="display: block; font-weight: 600; margin-bottom: 6px;">
+                            {{ form.reference.label }} <span style="color: #dc2626;">*</span>
+                        </label>
+                        {{ form.reference }}
+                        {% if form.reference.errors %}<small style="color: #dc2626;">{{ form.reference.errors|join:", " }}</small>{% endif %}
+                    </div>
+                    <div>
+                        <label for="{{ form.designation.id_for_label }}" style="display: block; font-weight: 600; margin-bottom: 6px;">
+                            {{ form.designation.label }} <span style="color: #dc2626;">*</span>
+                        </label>
+                        {{ form.designation }}
+                        {% if form.designation.errors %}<small style="color: #dc2626;">{{ form.designation.errors|join:", " }}</small>{% endif %}
+                    </div>
+                </div>
+
+                <!-- Typologie & Compte PCGE -->
+                <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 16px;">
+                    <div>
+                        <label for="{{ form.nature_produit.id_for_label }}" style="display: block; font-weight: 600; margin-bottom: 6px;">
+                            {{ form.nature_produit.label }}
+                        </label>
+                        {{ form.nature_produit }}
+                    </div>
+                    <div>
+                        <label for="{{ form.compte_stock.id_for_label }}" style="display: block; font-weight: 600; margin-bottom: 6px;">
+                            Compte Stock
+                        </label>
+                        {{ form.compte_stock }}
+                    </div>
+                    <div>
+                        <label for="{{ form.compte_variation.id_for_label }}" style="display: block; font-weight: 600; margin-bottom: 6px;">
+                            Variation Stock
+                        </label>
+                        {{ form.compte_variation }}
+                    </div>
+                </div>
+
+                <!-- Tarification & Stock initial -->
+                <div style="background: #f8fafc; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
+                    <div>
+                        <label for="{{ form.prix_achat_ht.id_for_label }}" style="display: block; font-weight: 600; margin-bottom: 6px;">
+                            {{ form.prix_achat_ht.label }}
+                        </label>
+                        {{ form.prix_achat_ht }}
+                        <small style="color: #64748b; font-size: 0.78rem;">Coût de revient pour valorisation</small>
+                        {% if form.prix_achat_ht.errors %}<small style="color: #dc2626;">{{ form.prix_achat_ht.errors|join:", " }}</small>{% endif %}
+                    </div>
+                    <div>
+                        <label for="{{ form.prix_vente_ht.id_for_label }}" style="display: block; font-weight: 600; margin-bottom: 6px;">
+                            {{ form.prix_vente_ht.label }} <span style="color: #dc2626;">*</span>
+                        </label>
+                        {{ form.prix_vente_ht }}
+                        <small style="color: #64748b; font-size: 0.78rem;">Prix facturé au client</small>
+                        {% if form.prix_vente_ht.errors %}<small style="color: #dc2626;">{{ form.prix_vente_ht.errors|join:", " }}</small>{% endif %}
+                    </div>
+                    <div>
+                        <label for="{{ form.stock_alerte.id_for_label }}" style="display: block; font-weight: 600; margin-bottom: 6px;">
+                            {{ form.stock_alerte.label }}
+                        </label>
+                        {{ form.stock_alerte }}
+                        <small style="color: #64748b; font-size: 0.78rem;">Seuil de déclenchement d'alerte</small>
+                    </div>
+                </div>
+
+                <!-- Stock initial -->
+                <div>
+                    <label for="{{ form.initial_stock.id_for_label }}" style="display: block; font-weight: 600; margin-bottom: 6px;">
+                        {{ form.initial_stock.label }}
+                    </label>
+                    {{ form.initial_stock }}
+                    <small style="color: #64748b; font-size: 0.78rem;">{{ form.initial_stock.help_text }}</small>
+                </div>
+
+                <!-- Description -->
+                <div>
+                    <label for="{{ form.description.id_for_label }}" style="display: block; font-weight: 600; margin-bottom: 6px;">
+                        {{ form.description.label }}
+                    </label>
+                    {{ form.description }}
+                </div>
+            </div>
+
+            <div style="margin-top: 24px; display: flex; justify-content: flex-end; gap: 12px; border-top: 1px solid #e2e8f0; padding-top: 16px;">
+                <a class="button quiet" href="{% url 'stock-dashboard' %}">Annuler</a>
+                <button type="submit" class="button primary" style="font-weight: 700; padding: 10px 24px;">
+                    Enregistrer l'article
+                </button>
+            </div>
+        </form>
+    </section>
+</div>
+{% endblock %}
+

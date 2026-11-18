@@ -1,0 +1,201 @@
+{% extends "finance/quotes/base.html" %}
+{% load finance_quotes %}
+{% block title %}{{ credit_note.number|default:"Avoir brouillon" }}{% endblock %}
+
+{% block content %}
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">
+            AVOIR · {{ credit_note.get_status_display|upper }}
+            · FACTURE <a href="{% url 'invoice-detail' credit_note.invoice.pk %}">{{ credit_note.invoice.number|default:credit_note.invoice.pk }}</a>
+        </p>
+        <h1>{{ credit_note.number|default:"Avoir brouillon" }}</h1>
+        <p class="subheading">
+            Client : <strong>{{ credit_note.customer.name }}</strong>
+            · Motif : <strong>{{ credit_note.get_reason_display }}</strong>
+        </p>
+    </div>
+    <div class="heading-actions">
+        <a class="button quiet" href="{% url 'invoice-detail' credit_note.invoice.pk %}">← Voir la facture</a>
+        <a class="button quiet" href="{% url 'credit-note-list' %}">Liste des avoirs</a>
+        <a class="button secondary" href="{% url 'credit-note-pdf' credit_note.pk %}">
+            {% if credit_note.status == "draft" %}Aperçu PDF (Brouillon){% else %}Télécharger PDF{% endif %}
+        </a>
+        <a class="button secondary" href="{% url 'credit-note-docx' credit_note.pk %}" title="Télécharger la note d'avoir au format Word">
+            📄 Télécharger Word (.docx)
+        </a>
+        {% if can_issue %}
+            <form method="post" action="{% url 'credit-note-issue' credit_note.pk %}" style="display: inline;" onsubmit="return confirm('Confirmez-vous l\'émission officielle de cet avoir ?\n\nUn numéro séquentiel définitif lui sera attribué et le stock des articles retournés sera automatiquement réintégré.');">
+                {% csrf_token %}
+                <button class="button primary" type="submit" style="background-color: #991b1b; border-color: #991b1b;">
+                    ✓ Émettre l'avoir officiel
+                </button>
+            </form>
+        {% endif %}
+    </div>
+</div>
+
+{% if credit_note.status == "draft" %}
+<div class="panel" style="background-color: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 16px; margin-bottom: 24px; color: #92400e;">
+    <div style="display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px;">
+        <span>📝</span> <span>AVOIR EN ÉTAT DE BROUILLON</span>
+    </div>
+    <p style="margin: 8px 0 0 0; font-size: 13.5px; color: #b45309; line-height: 1.4;">
+        Cet avoir n'a pas encore été validé. Une fois vérifié, cliquez sur <strong>« Émettre l'avoir officiel »</strong> pour lui attribuer un numéro définitif légal (ex: <code>AVO-2026-0001</code>), réintégrer le matériel retourné en stock et déduire le montant du compte client.
+    </p>
+</div>
+{% else %}
+<div class="panel" style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 16px; margin-bottom: 24px; color: #166534;">
+    <div style="display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px;">
+        <span>✓</span> <span>AVOIR OFFICIELLEMENT ÉMIS</span>
+    </div>
+    <p style="margin: 8px 0 0 0; font-size: 13.5px; color: #15803d; line-height: 1.4;">
+        Avoir émis le {{ credit_note.issue_date|date:"d/m/Y" }}. 
+        Le stock des matériels retournés a été réintégré et le reste à payer sur la facture <a href="{% url 'invoice-detail' credit_note.invoice.pk %}" style="color: #166534; font-weight: 600;">{{ credit_note.invoice.number }}</a> a été ajusté en conséquence.
+    </p>
+</div>
+{% endif %}
+
+<section class="summary-grid">
+    <article class="panel summary-card">
+        <span>Client</span>
+        <strong>{{ credit_note.customer.name }}</strong>
+        <small>{% if credit_note.customer.ice %}ICE : {{ credit_note.customer.ice }}{% else %}{{ credit_note.customer.city|default:"" }}{% endif %}</small>
+    </article>
+    <article class="panel summary-card">
+        <span>Facture rattachée</span>
+        <strong><a href="{% url 'invoice-detail' credit_note.invoice.pk %}">{{ credit_note.invoice.number }}</a></strong>
+        <small>Émise le {{ credit_note.invoice.issue_date|date:"d/m/Y"|default:"—" }}</small>
+    </article>
+    <article class="panel summary-card">
+        <span>Date d'avoir & Statut</span>
+        <strong>{{ credit_note.issue_date|date:"d/m/Y"|default:"Brouillon" }}</strong>
+        <small><span class="status status-{{ credit_note.status }}">{{ credit_note.get_status_display }}</span></small>
+    </article>
+    <article class="panel summary-card">
+        <span>Montant total crédité</span>
+        <strong style="color: #991b1b;">− {{ credit_note.total_ttc|money }} MAD TTC</strong>
+        <small>Net HT : {{ credit_note.total_net|money }} MAD</small>
+    </article>
+</section>
+
+<section class="panel table-panel">
+    <div class="section-heading">
+        <div>
+            <p class="eyebrow">DÉTAIL DES ARTICLES & PRESTATIONS</p>
+            <h2>Lignes créditées</h2>
+        </div>
+    </div>
+    <div class="table-scroll">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Désignation</th>
+                    <th>Type</th>
+                    <th class="numeric">Quantité retournée</th>
+                    <th class="numeric">Prix unitaire HT</th>
+                    <th>Taxe TVA</th>
+                    <th class="numeric">Total Net HT</th>
+                    <th class="numeric">Total TTC déduit</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for line in lines %}
+                    <tr>
+                        <td>
+                            <strong>{{ line.description }}</strong>
+                            {% if line.article %}
+                                <div style="font-size: 11px; color: #2563eb;">📦 Matériel réintégré en stock (Réf: {{ line.article.reference|default:"—" }})</div>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if line.article %}
+                                <span class="pay-method-badge" style="background: #eff6ff; color: #1e40af;">Article</span>
+                            {% else %}
+                                <span class="pay-method-badge" style="background: #f5f3ff; color: #5b21b6;">Prestation</span>
+                            {% endif %}
+                        </td>
+                        <td class="numeric">{{ line.quantity }}</td>
+                        <td class="numeric">{{ line.unit_price|money }} MAD</td>
+                        <td>{{ line.tax_name }}{% if line.tax_percentage %} ({{ line.tax_percentage }} %){% endif %}</td>
+                        <td class="numeric">{{ line.amounts.net|money }} MAD</td>
+                        <td class="numeric" style="font-weight: 700; color: #991b1b;">− {{ line.amounts.total|money }} MAD</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="7">Aucune ligne dans cet avoir.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="detail-totals">
+        <div><span>Total brut HT</span><strong>{{ totals.gross|money }} MAD</strong></div>
+        {% if totals.discount > 0 %}
+            <div><span>Remises</span><strong>− {{ totals.discount|money }} MAD</strong></div>
+        {% endif %}
+        <div><span>Total net HT déduit</span><strong style="color: #991b1b;">− {{ totals.net|money }} MAD</strong></div>
+        <div><span>Total TVA rectifiée</span><strong style="color: #991b1b;">− {{ totals.tax|money }} MAD</strong></div>
+        <div class="grand-total">
+            <span>Montant total de l'avoir (TTC)</span>
+            <strong style="color: #991b1b;">− {{ totals.total|money }} MAD</strong>
+        </div>
+    </div>
+</section>
+
+<div style="display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-top: 24px;">
+    <section class="panel form-panel">
+        <p class="eyebrow">JUSTIFICATIF & NOTES</p>
+        <div style="margin-bottom: 16px;">
+            <strong style="font-size: 14px; color: #0f172a;">Motif :</strong>
+            <span style="font-size: 14px; color: #475569;">{{ credit_note.get_reason_display }}</span>
+            {% if credit_note.reason_details %}
+                <p style="margin: 6px 0 0 0; font-size: 13.5px; color: #334155; background: #f8fafc; padding: 10px 14px; border-radius: 6px; border-left: 3px solid #94a3b8;">
+                    {{ credit_note.reason_details }}
+                </p>
+            {% endif %}
+        </div>
+        {% if credit_note.notes %}
+            <div style="margin-top: 16px;">
+                <strong style="font-size: 14px; color: #0f172a;">Mentions complémentaires :</strong>
+                <p style="margin: 6px 0 0 0; font-size: 13.5px; color: #475569; white-space: pre-line;">{{ credit_note.notes }}</p>
+            </div>
+        {% endif %}
+    </section>
+
+    <section class="panel" style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px;">
+        <span style="font-size: 12px; font-weight: 700; color: #64748b; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 8px;">Cachet et Signature Officielle</span>
+        {% if company.stamp_image %}
+            <img src="{{ company.stamp_image.url }}" alt="Cachet Officiel" style="max-height: 120px; object-fit: contain; margin-top: 6px;">
+            <small style="margin-top: 8px; color: #64748b; font-size: 11px;">Intégré sur les exports PDF et Word</small>
+        {% else %}
+            <div style="height: 100px; width: 140px; border: 2px dashed #cbd5e1; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-size: 12px;">
+                Sans cachet
+            </div>
+        {% endif %}
+    </section>
+</div>
+
+{% if history %}
+<section class="panel table-panel" style="margin-top: 24px;">
+    <div class="section-heading"><div><p class="eyebrow">TRAÇABILITÉ & AUDIT</p><h2>Historique du document</h2></div></div>
+    <div class="table-scroll">
+        <table class="data-table">
+            <thead>
+                <tr><th>Date</th><th>Utilisateur</th><th>Action</th><th>Détails</th></tr>
+            </thead>
+            <tbody>
+                {% for entry in history %}
+                    <tr>
+                        <td>{{ entry.created_at|date:"d/m/Y H:i" }}</td>
+                        <td>{{ entry.actor.get_full_name|default:entry.actor.username|default:"Système" }}</td>
+                        <td>{{ entry.get_action_display }}</td>
+                        <td>{{ entry.details|default:"—" }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endif %}
+{% endblock %}
+

@@ -53,6 +53,56 @@ class Expense(models.Model):
     created_at = models.DateTimeField("créée le", auto_now_add=True)
     updated_at = models.DateTimeField("modifiée le", auto_now=True)
 
+    # Gestion des charges non déductibles et réintégrations fiscales (IS - CGI Maroc)
+    class NonDeductibleReason(models.TextChoices):
+        NONE = "none", "Déductible (Droit commun)"
+        CASH_OVER_CEILING = "cash_over_ceiling", "Art. 11-II CGI : Espèces > 5 000 DH"
+        FINES_PENALTIES = "fines_penalties", "Art. 11-I CGI : Amendes, pénalités et majorations"
+        CLIENT_GIFTS = "client_gifts", "Art. 10-I-B CGI : Cadeaux clientèle non conformes (>100 DH / sans logo)"
+        VEHICLE_EXPENSE = "vehicle_expense", "Art. 106-I / 10-III CGI : Frais / Amortissement véhicule tourisme"
+        UNPROVED_EXPENSE = "unproved_expense", "Art. 146 CGI : Justificatif non probant ou sans ICE"
+        LIBERALITY_LUXURY = "liberality_luxury", "Art. 11 CGI : Acte de libéralité / Dépense somptuaire"
+        OTHER = "other", "Autre charge à réintégrer"
+
+    is_tax_deductible = models.BooleanField(
+        "déductible fiscalement (IS)",
+        default=True,
+        help_text="Décocher si cette charge doit être réintégrée au résultat fiscal imposable (IS).",
+    )
+    non_deductible_amount = models.DecimalField(
+        "montant non déductible (MAD)",
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        validators=[MinValueValidator(Decimal("0.00"))],
+        help_text="Montant précis à réintégrer (0,00 si la dépense est intégralement non déductible).",
+    )
+    non_deductible_reason = models.CharField(
+        "motif de réintégration fiscale",
+        max_length=30,
+        choices=NonDeductibleReason.choices,
+        default=NonDeductibleReason.NONE,
+    )
+    fiscal_notes = models.TextField(
+        "justification fiscale / observation",
+        blank=True,
+        help_text="Précisions pour le comptable / fiduciaire (ex: amende CNSS, facture sans ICE...).",
+    )
+    tax_rate = models.DecimalField(
+        "taux de TVA (%)",
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Taux de TVA appliqué à cette dépense (laisser vide pour utiliser le taux de la catégorie).",
+    )
+    is_vat_recoverable = models.BooleanField(
+        "TVA récupérable",
+        null=True,
+        blank=True,
+        help_text="Indique si la TVA est déductible. Si non renseigné, le comportement par défaut de la catégorie s'applique.",
+    )
+
     class Meta:
         ordering = ["-expense_date", "-id"]
         verbose_name = "dépense"
@@ -69,6 +119,10 @@ class Expense(models.Model):
                 raise ValidationError(
                     {"amount": "Le montant ne peut pas être inférieur aux paiements déjà enregistrés."}
                 )
+        if self.non_deductible_amount and self.amount and self.non_deductible_amount > self.amount:
+            raise ValidationError(
+                {"non_deductible_amount": "Le montant non déductible ne peut pas dépasser le montant total de la dépense."}
+            )
 
     def save(self, *args, **kwargs):
         with transaction.atomic():
@@ -105,6 +159,9 @@ class Expense(models.Model):
             "expense_date": expense.expense_date.isoformat(),
             "amount": str(expense.amount),
             "receipt": expense.receipt.name if expense.receipt else "",
+            "is_tax_deductible": expense.is_tax_deductible,
+            "non_deductible_amount": str(expense.non_deductible_amount),
+            "non_deductible_reason": expense.non_deductible_reason,
         }
 
     def _audit_actor_name(self):
@@ -139,6 +196,87 @@ class Expense(models.Model):
             (p.cash_excess_amount for p in self.payments.all() if p.is_cash_over_ceiling),
             Decimal("0.00"),
         )
+
+    @property
+    def fiscal_reintegration_amount(self):
+        """Montant total à réintégrer fiscalement (IS) pour cette charge."""
+        if not self.is_tax_deductible:
+            if self.non_deductible_amount and self.non_deductible_amount > Decimal("0.00"):
+                return min(self.amount, round_money(self.non_deductible_amount))
+            return self.amount
+        if self.has_cash_over_ceiling:
+            return min(self.amount, round_money(self.total_cash_excess))
+        if self.non_deductible_amount and self.non_deductible_amount > Decimal("0.00"):
+            return min(self.amount, round_money(self.non_deductible_amount))
+        return Decimal("0.00")
+
+    @property
+    def has_fiscal_reintegration(self):
+        return (not self.is_tax_deductible) or self.has_cash_over_ceiling or (self.non_deductible_amount > Decimal("0.00"))
+
+    @property
+    def effective_is_vat_recoverable(self):
+        """Vérifie si la TVA est récupérable fiscalement (Art. 106 CGI marocain)."""
+        if self.is_vat_recoverable is not None:
+            return self.is_vat_recoverable
+        if self.category:
+            if not getattr(self.category, "is_vat_recoverable", True):
+                return False
+            if getattr(self.category, "pcge_account", "") == "61251":
+                return False
+        return True
+
+    @property
+    def effective_tax_rate(self):
+        """Taux de TVA effectif pour la dépense."""
+        if not self.effective_is_vat_recoverable:
+            return Decimal("0.00")
+        if self.tax_rate is not None:
+            return self.tax_rate
+        if self.category:
+            return getattr(self.category, "vat_rate", Decimal("20.00"))
+        return Decimal("20.00")
+
+    @property
+    def base_ht(self):
+        """Montant HT de la dépense. Si la TVA n'est pas récupérable (Carburant), la charge reste 100% en TTC."""
+        if not self.effective_is_vat_recoverable:
+            return self.amount
+        rate = self.effective_tax_rate
+        if rate == Decimal("0.00"):
+            return self.amount
+        divisor = Decimal("1.00") + (rate / Decimal("100.00"))
+        return round_money(self.amount / divisor)
+
+    @property
+    def vat_amount(self):
+        """Montant de TVA récupérable au compte 34552 (0,00 MAD pour Carburant Art. 106)."""
+        if not self.effective_is_vat_recoverable:
+            return Decimal("0.00")
+        return round_money(self.amount - self.base_ht)
+
+    @property
+    def vat_status_label(self):
+        if not self.effective_is_vat_recoverable:
+            if self.category and self.category.pcge_account == "61251":
+                return "Exclue (Art. 106 CGI - Carburant)"
+            return "Exclue / Non déductible"
+        rate = self.effective_tax_rate
+        if rate == Decimal("0.00"):
+            return "Sans TVA"
+        return f"Récupérable ({rate:.0f}%)"
+
+    @property
+    def effective_reintegration_reason(self):
+        if not self.is_tax_deductible and self.non_deductible_reason != self.NonDeductibleReason.NONE:
+            return self.get_non_deductible_reason_display()
+        if self.has_cash_over_ceiling:
+            return "Art. 11-II CGI : Espèces > 5 000 DH"
+        if not self.is_tax_deductible:
+            return "Charge non déductible (à réintégrer)"
+        if self.non_deductible_amount > Decimal("0.00"):
+            return self.get_non_deductible_reason_display() if self.non_deductible_reason != self.NonDeductibleReason.NONE else "Réintégration partielle"
+        return "Déductible"
 
     def __str__(self):
         return self.description
@@ -370,6 +508,7 @@ class Quote(models.Model):
             raise ValidationError("Un devis envoyé ne peut pas être supprimé.")
         return super().delete(*args, **kwargs)
 
+
     @property
     def invoice(self):
         """Rétrocompatibilité : renvoie la première facture liée."""
@@ -441,6 +580,14 @@ class QuoteLine(models.Model):
         on_delete=models.SET_NULL,
         related_name="quote_lines",
         verbose_name="service du catalogue",
+        null=True,
+        blank=True,
+    )
+    article = models.ForeignKey(
+        "catalog.Article",
+        on_delete=models.SET_NULL,
+        related_name="quote_lines",
+        verbose_name="article du stock",
         null=True,
         blank=True,
     )
@@ -757,8 +904,9 @@ class CompanySettings(models.Model):
     bank_name = models.CharField("banque", max_length=100, blank=True)
     rib = models.CharField("RIB (24 chiffres)", max_length=35, blank=True)
 
-    # Logo
+    # Logo & Cachet
     logo = models.ImageField("logo de l'entreprise", upload_to="company/", blank=True, null=True)
+    stamp = models.ImageField("cachet / tampon de l'entreprise", upload_to="company/", blank=True, null=True)
 
     class Meta:
         verbose_name = "paramètres de l'entreprise"
@@ -934,8 +1082,16 @@ class Invoice(models.Model):
         return round_money(total or Decimal("0.00"))
 
     @property
+    def total_credited(self):
+        return sum(
+            (cn.total_ttc for cn in self.credit_notes.filter(status="issued")),
+            Decimal("0.00"),
+        )
+
+    @property
     def remaining_balance(self):
-        return round_money(self.total_ttc - self.total_paid)
+        balance = self.total_ttc - self.total_paid - self.total_credited
+        return round_money(max(Decimal("0.00"), balance))
 
     @property
     def has_cash_over_ceiling(self):
@@ -975,6 +1131,14 @@ class InvoiceLine(models.Model):
         on_delete=models.SET_NULL,
         related_name="invoice_lines",
         verbose_name="service du catalogue",
+        null=True,
+        blank=True,
+    )
+    article = models.ForeignKey(
+        "catalog.Article",
+        on_delete=models.SET_NULL,
+        related_name="invoice_lines",
+        verbose_name="article du stock",
         null=True,
         blank=True,
     )
@@ -1081,6 +1245,19 @@ class InvoiceLine(models.Model):
         if self.invoice.status != Invoice.Status.DRAFT:
             raise ValidationError("Les lignes d'une facture émise sont immuables.")
         return super().delete(*args, **kwargs)
+
+    @property
+    def credited_quantity(self):
+        """Quantite deja creditee sur les avoirs emis."""
+        return sum(
+            (l.quantity for l in self.credit_lines.filter(credit_note__status="issued")),
+            Decimal("0.000"),
+        )
+
+    @property
+    def remaining_creditable_quantity(self):
+        """Quantite pouvant encore faire l'objet d'un retour ou avoir."""
+        return max(Decimal("0.000"), self.quantity - self.credited_quantity)
 
     def __str__(self):
         return self.description
@@ -1255,6 +1432,14 @@ class DocumentHistory(models.Model):
         null=True,
         blank=True,
     )
+    credit_note = models.ForeignKey(
+        "finance.CreditNote",
+        on_delete=models.CASCADE,
+        related_name="history",
+        verbose_name="facture d'avoir",
+        null=True,
+        blank=True,
+    )
     event = models.CharField("événement", max_length=20, choices=Event.choices)
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -1274,8 +1459,9 @@ class DocumentHistory(models.Model):
         constraints = [
             models.CheckConstraint(
                 condition=(
-                    Q(quote__isnull=False, invoice__isnull=True)
-                    | Q(quote__isnull=True, invoice__isnull=False)
+                    Q(quote__isnull=False, invoice__isnull=True, credit_note__isnull=True)
+                    | Q(quote__isnull=True, invoice__isnull=False, credit_note__isnull=True)
+                    | Q(quote__isnull=True, invoice__isnull=True, credit_note__isnull=False)
                 ),
                 name="document_history_exactly_one_document",
             ),
@@ -1292,3 +1478,209 @@ from .accounting_models import (
     EcritureComptable,
     LigneEcriture,
 )
+
+
+class CreditNoteNumberingSettings(models.Model):
+    prefix = models.CharField("préfixe", max_length=12, default="AVO")
+    separator = models.CharField("séparateur", max_length=3, default="-")
+    include_year = models.BooleanField("inclure l'année", default=True)
+    sequence_width = models.PositiveSmallIntegerField("chiffres de séquence", default=4)
+
+    class Meta:
+        verbose_name = "paramètres de numérotation des avoirs"
+        verbose_name_plural = "paramètres de numérotation des avoirs"
+
+    def clean(self):
+        super().clean()
+        if self.pk not in (None, 1):
+            raise ValidationError("Un seul paramètre de numérotation des avoirs est autorisé.")
+        if not self.prefix.strip():
+            raise ValidationError({"prefix": "Le préfixe ne peut pas être vide."})
+        if not 1 <= self.sequence_width <= 12:
+            raise ValidationError({"sequence_width": "Choisissez entre 1 et 12 chiffres."})
+        if not re.fullmatch(r"[A-Z0-9]{1,12}", self.prefix.strip().upper()):
+            raise ValidationError({"prefix": "Utilisez de 1 à 12 lettres ou chiffres."})
+        if not re.fullmatch(r"[-_/]{1,3}", self.separator):
+            raise ValidationError({"separator": "Le séparateur doit être -, _ ou /."})
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        self.prefix = self.prefix.strip().upper()
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    @classmethod
+    def get_settings(cls):
+        try:
+            return cls.objects.get(pk=1)
+        except cls.DoesNotExist:
+            obj, _ = cls.objects.get_or_create(
+                pk=1,
+                defaults={
+                    "prefix": "AVO",
+                    "separator": "-",
+                    "include_year": True,
+                    "sequence_width": 4,
+                },
+            )
+            return obj
+
+    def __str__(self):
+        year = self.separator + "AAAA" if self.include_year else ""
+        return f"{self.prefix}{year}{self.separator}{{séquence}}"
+
+
+class CreditNoteNumberCounter(models.Model):
+    year = models.PositiveSmallIntegerField("année", primary_key=True)
+    last_number = models.PositiveIntegerField("dernier numéro attribué", default=0)
+
+    class Meta:
+        ordering = ["year"]
+        verbose_name = "compteur annuel d'avoirs"
+        verbose_name_plural = "compteurs annuels d'avoirs"
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(last_number__gte=0),
+                name="credit_note_counter_last_number_nonnegative",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.year} : {self.last_number}"
+
+
+class CreditNote(models.Model):
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Brouillon"
+        ISSUED = "issued", "Émis"
+
+    class Reason(models.TextChoices):
+        RETURN = "return", "Retour de marchandise / matériel"
+        COMMERCIAL = "commercial", "Geste commercial / Remise après facturation"
+        BILLING_ERROR = "billing_error", "Erreur de facturation / Rectification"
+        OTHER = "other", "Autre motif"
+
+    number = models.CharField("numéro d'avoir", max_length=50, unique=True, null=True, blank=True)
+    invoice = models.ForeignKey(
+        Invoice,
+        on_delete=models.PROTECT,
+        related_name="credit_notes",
+        verbose_name="facture d'origine",
+    )
+    customer = models.ForeignKey(
+        "partners.Customer",
+        on_delete=models.PROTECT,
+        related_name="credit_notes",
+        verbose_name="client",
+    )
+    customer_snapshot = models.JSONField(
+        "coordonnées client historisées",
+        default=dict,
+        blank=True,
+    )
+    status = models.CharField(
+        "statut",
+        max_length=20,
+        choices=Status.choices,
+        default=Status.DRAFT,
+    )
+    reason = models.CharField(
+        "motif de l'avoir",
+        max_length=30,
+        choices=Reason.choices,
+        default=Reason.RETURN,
+    )
+    reason_details = models.TextField("détails du motif", blank=True)
+    issue_date = models.DateField("date d'émission", null=True, blank=True)
+    notes = models.TextField("notes / mentions", blank=True)
+    created_at = models.DateTimeField("créé le", auto_now_add=True)
+    updated_at = models.DateTimeField("modifié le", auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "facture d'avoir"
+        verbose_name_plural = "factures d'avoir"
+
+    def __str__(self):
+        return self.number or f"Avoir brouillon #{self.pk}"
+
+    @property
+    def total_ht(self):
+        from .quote_calculations import calculate_quote_totals
+        return calculate_quote_totals(self.lines.all())["net"]
+
+    @property
+    def total_net(self):
+        return self.total_ht
+
+    @property
+    def total_ttc(self):
+        from .quote_calculations import calculate_quote_totals
+        return calculate_quote_totals(self.lines.all())["total"]
+
+    @property
+    def total_tax(self):
+        from .quote_calculations import calculate_quote_totals
+        return calculate_quote_totals(self.lines.all())["tax"]
+
+
+class CreditNoteLine(models.Model):
+    credit_note = models.ForeignKey(
+        CreditNote,
+        on_delete=models.CASCADE,
+        related_name="lines",
+        verbose_name="avoir",
+    )
+    invoice_line = models.ForeignKey(
+        InvoiceLine,
+        on_delete=models.SET_NULL,
+        related_name="credit_lines",
+        verbose_name="ligne de facture d'origine",
+        null=True,
+        blank=True,
+    )
+    service = models.ForeignKey(
+        "catalog.Service",
+        on_delete=models.SET_NULL,
+        related_name="credit_lines",
+        null=True,
+        blank=True,
+    )
+    article = models.ForeignKey(
+        "catalog.Article",
+        on_delete=models.SET_NULL,
+        related_name="credit_lines",
+        null=True,
+        blank=True,
+    )
+    description = models.CharField("désignation", max_length=255)
+    quantity = models.DecimalField("quantité retournée / créditée", max_digits=10, decimal_places=3)
+    unit_price = models.DecimalField("prix unitaire HT", max_digits=12, decimal_places=2)
+    discount_type = models.CharField(
+        "type de remise",
+        max_length=20,
+        choices=QuoteLine.DiscountType.choices,
+        default=QuoteLine.DiscountType.PERCENTAGE,
+    )
+    discount_value = models.DecimalField("valeur de la remise", max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    tax_rate = models.ForeignKey(
+        "catalog.TaxRate",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+    tax_percentage = models.DecimalField("taux de TVA appliqué", max_digits=5, decimal_places=2, default=Decimal("20.00"))
+    tax_name = models.CharField("nom de la taxe", max_length=50, default="TVA 20%")
+    position = models.PositiveSmallIntegerField("ordre d'affichage", default=0)
+
+    class Meta:
+        ordering = ["position", "id"]
+        verbose_name = "ligne d'avoir"
+        verbose_name_plural = "lignes d'avoir"
+        constraints = [
+            models.CheckConstraint(condition=Q(quantity__gt=0), name="credit_line_quantity_positive"),
+            models.CheckConstraint(condition=Q(unit_price__gte=0), name="credit_line_unit_price_nonnegative"),
+        ]
+
+    def __str__(self):
+        return f"{self.quantity} x {self.description}"

@@ -8,9 +8,12 @@
         <h1>Factures</h1>
         <p class="subheading">Consultez et émettez vos factures de prestations.</p>
     </div>
-    {% if perms.finance.add_invoice %}
-        <a class="button primary" href="{% url 'invoice-create' %}">＋ Nouvelle facture</a>
-    {% endif %}
+    <div style="display: flex; gap: 8px;">
+        <a class="button secondary" href="{% url 'credit-note-list' %}">↩️ Notes d'avoir</a>
+        {% if perms.finance.add_invoice %}
+            <a class="button primary" href="{% url 'invoice-create' %}">＋ Nouvelle facture</a>
+        {% endif %}
+    </div>
 </div>
 <section class="panel filter-panel">
     <form method="get" class="filters">
