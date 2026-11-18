@@ -67,6 +67,7 @@ class Expense(models.Model):
     is_tax_deductible = models.BooleanField(
         "déductible fiscalement (IS)",
         default=True,
+        blank=True,
         help_text="Décocher si cette charge doit être réintégrée au résultat fiscal imposable (IS).",
     )
     non_deductible_amount = models.DecimalField(
@@ -74,6 +75,7 @@ class Expense(models.Model):
         max_digits=12,
         decimal_places=2,
         default=Decimal("0.00"),
+        blank=True,
         validators=[MinValueValidator(Decimal("0.00"))],
         help_text="Montant précis à réintégrer (0,00 si la dépense est intégralement non déductible).",
     )
@@ -82,6 +84,7 @@ class Expense(models.Model):
         max_length=30,
         choices=NonDeductibleReason.choices,
         default=NonDeductibleReason.NONE,
+        blank=True,
     )
     fiscal_notes = models.TextField(
         "justification fiscale / observation",

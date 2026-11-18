@@ -17,11 +17,13 @@ class ExpenseCategory(models.Model):
         "compte PCGE",
         max_length=10,
         default="6111",
+        blank=True,
         help_text="Compte de charges du Plan Comptable Général des Entreprises (ex: 6111, 61251, 6144, 6583...).",
     )
     is_tax_deductible_default = models.BooleanField(
         "déductible par défaut à l'IS",
         default=True,
+        blank=True,
         help_text="Décocher si les charges de cette catégorie sont systématiquement non déductibles fiscalement.",
     )
     default_non_deductible_reason = models.CharField(
@@ -36,11 +38,13 @@ class ExpenseCategory(models.Model):
         max_digits=5,
         decimal_places=2,
         default=Decimal("20.00"),
+        blank=True,
         help_text="Taux de TVA standard (ex: 20%, 10%, 14%, 0%).",
     )
     is_vat_recoverable = models.BooleanField(
         "TVA récupérable",
         default=True,
+        blank=True,
         help_text="Décocher si la TVA est fiscalement exclue du droit à déduction (ex: carburant Art. 106-I-2° CGI, amendes).",
     )
 
